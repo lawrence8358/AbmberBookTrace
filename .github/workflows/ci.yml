@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build single-site package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            src/booktrace-client/pnpm-lock.yaml
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install root Node.js dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: src/booktrace-client
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Restore API dependencies
+        run: dotnet restore src/BookTrace.Api/BookTrace.Api.csproj
+
+      - name: Publish single-site package
+        run: >-
+          dotnet publish src/BookTrace.Api/BookTrace.Api.csproj
+          --configuration Release
+          --no-restore
+          --output artifacts/booktrace-site
+
+      - name: Verify frontend is included in the site package
+        run: test -f artifacts/booktrace-site/wwwroot/index.html
+
+      - name: Upload downloadable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: booktrace-site-${{ github.sha }}
+          path: artifacts/booktrace-site
+          if-no-files-found: error
+          retention-days: 90
