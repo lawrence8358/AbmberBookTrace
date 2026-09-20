@@ -1,0 +1,12 @@
+{
+  "name": "booktrace",
+  "private": true,
+  "scripts": {
+    "build": "pnpm --dir src/booktrace-client build",
+    "dev": "pnpm --dir src/booktrace-client dev",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.1"
+  }
+}

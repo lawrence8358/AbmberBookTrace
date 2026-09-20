@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 **Labels:** ready-for-agent
 
@@ -18,3 +18,4 @@
 ## Comments
 
 - 2026-09-20：依使用者確認的 `book-tracking-mvp` ticket 拆分發布。
+- 2026-09-20：開始依交接規格實作；測試 seam 採完整瀏覽器流程，先完成新增書籍到查看詳情的 tracer bullet。
