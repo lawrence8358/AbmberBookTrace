@@ -2,6 +2,7 @@
 import { onMounted, ref } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { getBook, type Book } from "../api";
+import StatusBadge from "../components/StatusBadge.vue";
 
 const route = useRoute();
 const book = ref<Book | null>(null);
@@ -33,7 +34,7 @@ onMounted(async () => {
         <h1>{{ book.title }}</h1>
         <p class="detail-author">{{ book.author || "未記錄作者" }}</p>
       </div>
-      <span class="status-badge status-home"><span aria-hidden="true">●</span> 在家</span>
+      <StatusBadge :status="book.status" />
     </div>
 
     <div class="detail-grid">

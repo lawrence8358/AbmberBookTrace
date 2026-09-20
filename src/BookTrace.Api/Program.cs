@@ -69,13 +69,13 @@ app.MapPost("/api/books", async (
     var book = new Book
     {
         Title = request.Title.Trim(),
-        Author = Normalize(request.Author),
-        Isbn = Normalize(request.Isbn),
-        Publisher = Normalize(request.Publisher),
-        Category = Normalize(request.Category),
-        Location = Normalize(request.Location),
-        DetailedLocation = Normalize(request.DetailedLocation),
-        Notes = Normalize(request.Notes),
+        Author = TrimToNull(request.Author),
+        Isbn = TrimToNull(request.Isbn),
+        Publisher = TrimToNull(request.Publisher),
+        Category = TrimToNull(request.Category),
+        Location = TrimToNull(request.Location),
+        DetailedLocation = TrimToNull(request.DetailedLocation),
+        Notes = TrimToNull(request.Notes),
         Status = BookStatus.Home,
         CreatedAtUtc = now,
         UpdatedAtUtc = now,
@@ -91,7 +91,7 @@ app.MapFallbackToFile("index.html");
 
 app.Run();
 
-static string? Normalize(string? value) =>
+static string? TrimToNull(string? value) =>
     string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
 public partial class Program;

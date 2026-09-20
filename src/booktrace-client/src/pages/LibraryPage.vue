@@ -2,6 +2,7 @@
 import { onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { getBooks, type Book } from "../api";
+import StatusBadge from "../components/StatusBadge.vue";
 
 const books = ref<Book[]>([]);
 const isLoading = ref(true);
@@ -56,7 +57,7 @@ onMounted(loadBooks);
           {{ book.location || "尚未記錄位置" }}<template v-if="book.detailedLocation"> · {{ book.detailedLocation }}</template>
         </p>
       </div>
-      <span class="status-badge status-home"><span aria-hidden="true">●</span> 在家</span>
+      <StatusBadge :status="book.status" />
     </article>
   </section>
 </template>

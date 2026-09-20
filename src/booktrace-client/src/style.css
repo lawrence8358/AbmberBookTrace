@@ -67,6 +67,7 @@ h2 { margin: 0; color: var(--text); }
 .book-location span { color: var(--primary-hover); }
 .status-badge { display: inline-flex; width: fit-content; align-items: center; gap: 6px; border-radius: 9999px; padding: 4px 12px; font-size: 13px; font-weight: 600; }
 .status-home { color: var(--primary-hover); background: var(--primary-light); }
+.status-borrowed { color: #b76e5d; background: var(--warm-accent-light); }
 .form-page { max-width: 800px; margin: 0 auto; }
 .book-form { padding: 32px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); }
 .form-section + .form-section { margin-top: 32px; padding-top: 32px; border-top: 1px solid var(--border); }
