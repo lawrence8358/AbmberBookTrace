@@ -11,3 +11,7 @@
 ### Domain docs
 
 使用單一背景的文件配置，包含根目錄的 `CONTEXT.md` 和 `docs/adr/`。詳情請看 `docs/agents/domain.md`。
+
+### Commit message
+
+建立或修改 commit 時，使用白話、容易理解的繁體中文。訊息先說明這次做了什麼，讓國一程度的讀者也能看懂；只有必要時才補充原因或影響。
