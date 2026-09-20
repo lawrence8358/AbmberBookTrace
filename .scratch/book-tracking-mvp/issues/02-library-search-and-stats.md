@@ -16,11 +16,6 @@
 - [x] 搜尋與狀態篩選可以同時使用，統計數字不因列表切換而顯示錯誤。
 - [x] 有瀏覽器流程測試驗證搜尋、篩選、排序、首頁統計與最近新增書籍。
 
-## Comments
-
-- 2026-09-20：作者數量以全部未刪除書籍計算，不因目前的狀態篩選重新計算。
-- 2026-09-20：由 Codex 認領，實作分支為 `codex/book-tracking-mvp-02`。
-
 ## Answer
 
 - 新增 `/api/books` 的搜尋、狀態篩選與作者藏書數排序，並新增 `/api/books/stats` 回傳統計與最近四本書。
@@ -28,3 +23,8 @@
 - 瀏覽器流程測試涵蓋書名／作者／ISBN 搜尋、大小寫與前後空白、狀態篩選、組合篩選、排序、統計、最近新增與空結果。
 - 驗證：Vue typecheck/build 通過；ASP.NET build 通過（0 warnings）；Playwright 2 passed。
 - Code review（standards/spec）未發現需要修正的問題。
+
+## Comments
+
+- 2026-09-20：作者數量以全部未刪除書籍計算，不因目前的狀態篩選重新計算。
+- 2026-09-20：由 Codex 認領，實作分支為 `codex/book-tracking-mvp-02`。

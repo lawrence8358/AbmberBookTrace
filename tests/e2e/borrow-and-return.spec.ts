@@ -1,8 +1,5 @@
 import { expect, test } from "@playwright/test";
-
-function uniqueTitle(prefix: string) {
-  return `${prefix} ${Date.now()}`;
-}
+import { addBook, uniqueTitle, useFixedClock } from "./helpers";
 
 function addDays(date: Date, days: number) {
   const result = new Date(date);
@@ -18,10 +15,7 @@ function addUtcDays(value: string, days: number) {
 
 test("user can borrow a book, see current borrowing details, and return it", async ({ page }) => {
   const title = uniqueTitle("借閱流程測試");
-  await page.goto("/books/new");
-  await page.getByLabel("書名（必填）", { exact: true }).fill(title);
-  await page.getByLabel("位置", { exact: true }).fill("客廳書櫃");
-  await page.getByRole("button", { name: "儲存書籍" }).click();
+  await addBook(page, title, { location: "客廳書櫃" });
 
   await expect(page.getByRole("heading", { name: "借閱狀態" })).toBeVisible();
   await page.getByRole("button", { name: "借出" }).click();
@@ -54,6 +48,24 @@ test("user can borrow a book, see current borrowing details, and return it", asy
   await page.getByRole("button", { name: "已歸還" }).click();
   await expect(page.getByRole("heading", { name: "借閱狀態" })).toBeVisible();
   await expect(page.getByText("目前沒有借閱中的資料", { exact: true })).toBeVisible();
+});
+
+test("untouched visible default due date delegates to the backend clock", async ({ page }) => {
+  await useFixedClock(page);
+  const title = uniqueTitle("借閱預設日期測試");
+  await addBook(page, title);
+
+  await page.getByRole("button", { name: "借出", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: /預計歸還日期/ })).toHaveValue("2026-10-04");
+  await page.getByRole("textbox", { name: /借閱人（必填）/ }).fill("預設日期借閱人");
+
+  const borrowRequest = page.waitForRequest((request) =>
+    request.method() === "POST" && request.url().endsWith("/borrow"));
+  await page.getByRole("button", { name: "確認借出", exact: true }).click();
+  const payload = JSON.parse((await borrowRequest).postData() ?? "{}");
+  expect(payload.dueDate).toBeNull();
+  expect(payload.clearDueDate).toBe(false);
+  await expect(page.locator(".borrowing-details").getByText("預設日期借閱人", { exact: true })).toBeVisible();
 });
 
 test("borrow and return API reject invalid state transitions and preserve dates", async ({ page }) => {

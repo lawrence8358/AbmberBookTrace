@@ -34,7 +34,7 @@ export default defineConfig({
     },
     {
       name: "mobile",
-      testMatch: "**/book-cover.spec.ts",
+      testMatch: ["**/book-cover.spec.ts", "**/responsive-acceptance.spec.ts"],
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 390, height: 844 },

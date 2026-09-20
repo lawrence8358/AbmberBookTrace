@@ -63,9 +63,7 @@ public sealed record BorrowingHistoryResponse(
         record.BookId,
         record.Book.Title,
         record.Book.Author,
-        record.Book.CoverImageData is null
-            ? null
-            : $"/api/books/{record.BookId}/cover?v={record.Book.UpdatedAtUtc.Ticks}",
+        BookContractHelpers.CoverUrlFor(record.Book),
         record.BorrowerName,
         record.BorrowDateUtc,
         record.DueDateUtc is null ? null : DateOnly.FromDateTime(record.DueDateUtc.Value),
@@ -91,9 +89,7 @@ public sealed record BorrowingReminderResponse(
             record.BookId,
             record.Book.Title,
             record.Book.Author,
-            record.Book.CoverImageData is null
-                ? null
-                : $"/api/books/{record.BookId}/cover?v={record.Book.UpdatedAtUtc.Ticks}",
+            BookContractHelpers.CoverUrlFor(record.Book),
             record.BorrowerName,
             DateOnly.FromDateTime(record.DueDateUtc!.Value),
             DateOnly.FromDateTime(record.DueDateUtc.Value) < today ? "OVERDUE" : "DUE_TODAY",
@@ -128,7 +124,7 @@ public sealed record BookResponse(
         book.Location,
         book.DetailedLocation,
         book.Notes,
-        book.CoverImageData is null ? null : $"/api/books/{book.Id}/cover?v={book.UpdatedAtUtc.Ticks}",
+        BookContractHelpers.CoverUrlFor(book),
         book.Status == BookStatus.Home ? "HOME" : "BORROWED",
         book.CreatedAtUtc,
         book.UpdatedAtUtc,
@@ -157,11 +153,18 @@ public sealed record RecycleBinBookResponse(
         book.Id,
         book.Title,
         book.Author,
-        book.CoverImageData is null ? null : $"/api/books/{book.Id}/cover?v={book.UpdatedAtUtc.Ticks}",
+        BookContractHelpers.CoverUrlFor(book),
         book.Status == BookStatus.Home ? "HOME" : "BORROWED",
         book.CreatedAtUtc,
         book.UpdatedAtUtc,
         book.DeletedAtUtc!.Value,
         book.DeletedAtUtc.Value.AddDays(30),
         currentBorrowing is null ? null : BorrowingRecordResponse.From(currentBorrowing));
+}
+
+internal static class BookContractHelpers
+{
+    public static string? CoverUrlFor(Book book) => book.CoverImageData is null
+        ? null
+        : $"/api/books/{book.Id}/cover?v={book.UpdatedAtUtc.Ticks}";
 }

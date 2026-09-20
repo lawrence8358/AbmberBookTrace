@@ -17,11 +17,6 @@
 - [x] 借出人未填、狀態不符或資料儲存失敗時，畫面會顯示清楚的錯誤訊息。
 - [x] 有瀏覽器流程測試驗證「借出 → 顯示目前借閱資訊 → 歸還 → 狀態回到在家」。
 
-## Comments
-
-- 2026-09-20：借閱紀錄的完整歷史呈現在 ticket 05；本 ticket 先完成目前借閱狀態與狀態轉換。
-- 2026-09-20：由 Codex 認領，工作分支為 `codex/book-tracking-mvp-04`。
-
 ## Answer
 
 - 新增 `BorrowingRecord` 與 SQLite/EF Core 關聯，保存借閱人、借出日期、預計歸還日期、實際歸還日期與備註。
@@ -29,3 +24,8 @@
 - 詳細頁新增借出表單、目前借閱資訊與歸還操作，並顯示清楚的錯誤訊息。
 - 新增瀏覽器流程與 API 邊界測試，涵蓋借出、驗證、預設／清除期限、重複狀態拒絕、歸還與狀態恢復。
 - 驗證：Vue typecheck、Vite build、ASP.NET build（0 warnings / 0 errors），完整 Playwright E2E 3 passed（單 worker、乾淨 Playwright SQLite）。
+
+## Comments
+
+- 2026-09-20：借閱紀錄的完整歷史呈現在 ticket 05；本 ticket 先完成目前借閱狀態與狀態轉換。
+- 2026-09-20：由 Codex 認領，工作分支為 `codex/book-tracking-mvp-04`。

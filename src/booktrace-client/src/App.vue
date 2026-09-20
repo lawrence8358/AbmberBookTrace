@@ -99,6 +99,10 @@ import { RouterLink, RouterView } from "vue-router";
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6.5 16.5h11l-1.2-1.8V10a4.3 4.3 0 0 0-8.6 0v4.7l-1.2 1.8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /><path d="M10 19h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
           <span>提醒</span>
         </RouterLink>
+        <RouterLink class="bottom-nav-link" to="/recycle-bin">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5.5 8.5h13v10h-13v-10ZM8 5.5h8l1 3H7l1-3Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /><path d="M9.5 12v3M14.5 12v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+          <span>回收筒</span>
+        </RouterLink>
       </nav>
     </div>
   </div>

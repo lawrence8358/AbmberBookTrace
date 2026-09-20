@@ -1,13 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { uniqueTitle } from "./helpers";
 
 const validPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
   "base64",
 );
-
-function uniqueTitle(prefix: string) {
-  return `${prefix} ${Date.now()}`;
-}
 
 test("desktop user can edit every book field, delete with confirmation, and restore history", async ({ page }) => {
   const originalTitle = uniqueTitle("可還原書籍");
@@ -114,6 +111,17 @@ test("mobile users do not see edit and delete controls", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("button", { name: "修改資料" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "刪除書籍" })).toHaveCount(0);
+
+  const bookId = Number(new URL(page.url()).pathname.split("/").at(-1));
+  const deleteResponse = await page.request.delete(`/api/books/${bookId}`);
+  expect(deleteResponse.ok()).toBeTruthy();
+  await page.goto("/recycle-bin");
+  const recycleCard = page.locator(".recycle-card").filter({ hasText: title });
+  await expect(recycleCard).toBeVisible();
+  await expect(recycleCard.getByRole("button", { name: "還原書籍", exact: true })).toBeVisible();
+  await recycleCard.getByRole("button", { name: "還原書籍", exact: true }).click();
+  await expect(page).toHaveURL(`/books/${bookId}`);
+  await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
 });
 
 test("expired deleted books are permanently cleaned up", async ({ page }) => {

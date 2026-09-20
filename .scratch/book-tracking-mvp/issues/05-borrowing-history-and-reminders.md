@@ -18,14 +18,14 @@
 - [x] 歸還後歷史紀錄仍完整存在，且借閱歷史不可修改或刪除。
 - [x] 有瀏覽器流程測試驗證歷史保存、到期日預設 14 天、到期提醒、逾期通知與歸還後歷史呈現。
 
-## Comments
-
-- 2026-09-20：預計歸還日預設為借出日後兩週；使用者可以修改或清除日期。
-- 2026-09-20：由 Codex 認領，工作分支為 `codex/book-tracking-mvp-05`。
-
 ## Answer
 
 - 新增唯讀借閱歷史與提醒 API，提供整本書歷史、全域目前／已歸還篩選，以及到期日當天／逾期的網站內提醒；無 Email、簡訊或手機推播。
 - 新增 `/borrowings` 借閱歷史頁、`/notifications` 提醒頁、首頁提醒摘要與書籍詳細頁歷史區塊，清楚區分目前借閱與已歸還紀錄。
 - 以 Playwright 的固定伺服器與瀏覽器時鐘驗證預設 14 天、到期提醒、逾期提醒、無期限不提醒、首頁入口、歸還後歷史保存。
 - 驗證：Vue typecheck／Vite build、ASP.NET build（0 warnings / 0 errors），ticket 05 focused E2E 1 passed，借出／歸還 E2E 2 passed。
+
+## Comments
+
+- 2026-09-20：預計歸還日預設為借出日後兩週；使用者可以修改或清除日期。
+- 2026-09-20：由 Codex 認領，工作分支為 `codex/book-tracking-mvp-05`。

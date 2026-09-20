@@ -1,36 +1,9 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { addBook, useFixedClock } from "./helpers";
 
-const FIXED_NOW = "2026-09-20T09:00:00.000Z";
 const TODAY = "2026-09-20";
 const DEFAULT_DUE_DATE = "2026-10-04";
 const OVERDUE_DATE = "2026-09-18";
-
-async function useFixedClock(page: Page) {
-  await page.addInitScript(`
-    (() => {
-      const fixedNow = ${JSON.stringify(FIXED_NOW)};
-      const OriginalDate = Date;
-      class FixedDate extends OriginalDate {
-        constructor(...args) {
-          super(...(args.length ? args : [fixedNow]));
-        }
-
-        static now() {
-          return new OriginalDate(fixedNow).getTime();
-        }
-      }
-      window.Date = FixedDate;
-    })();
-  `);
-}
-
-async function addBook(page: Page, title: string) {
-  await page.goto("/books/new");
-  await page.getByLabel("書名（必填）", { exact: true }).fill(title);
-  await page.getByRole("button", { name: "儲存書籍" }).click();
-  await expect(page).toHaveURL(/\/books\/\d+$/);
-  await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
-}
 
 async function borrowBook(page: Page, borrowerName: string, dueDate: string | null) {
   await page.getByRole("button", { name: "借出" }).click();

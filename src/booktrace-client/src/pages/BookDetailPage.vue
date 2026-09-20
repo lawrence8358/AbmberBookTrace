@@ -33,6 +33,7 @@ const isDeleting = ref(false);
 const borrowForm = reactive({
   borrowerName: "",
   dueDate: "",
+  dueDateEdited: false,
   note: "",
 });
 
@@ -79,10 +80,16 @@ function openBorrowForm() {
   defaultDueDate.setDate(defaultDueDate.getDate() + 14);
   borrowForm.borrowerName = "";
   borrowForm.dueDate = toInputDate(defaultDueDate);
+  borrowForm.dueDateEdited = false;
   borrowForm.note = "";
   borrowError.value = "";
   borrowerError.value = "";
   isBorrowFormOpen.value = true;
+}
+
+function clearDueDate() {
+  borrowForm.dueDate = "";
+  borrowForm.dueDateEdited = true;
 }
 
 function closeBorrowForm() {
@@ -106,11 +113,12 @@ async function submitBorrow() {
 
   isSavingBorrow.value = true;
   try {
+    const hasExplicitDueDate = borrowForm.dueDateEdited && Boolean(borrowForm.dueDate);
     book.value = await borrowBook(book.value.id, {
       borrowerName: borrowForm.borrowerName,
-      dueDate: borrowForm.dueDate || null,
+      dueDate: hasExplicitDueDate ? borrowForm.dueDate : null,
       note: borrowForm.note,
-      clearDueDate: !borrowForm.dueDate,
+      clearDueDate: borrowForm.dueDateEdited && !borrowForm.dueDate,
     });
     await loadHistory();
     isBorrowFormOpen.value = false;
@@ -325,8 +333,8 @@ onMounted(loadBook);
         <label class="field">
           <span>預計歸還日期</span>
           <span class="date-field">
-            <input v-model="borrowForm.dueDate" type="date" />
-            <button class="button button-text" type="button" @click="borrowForm.dueDate = ''">清除日期</button>
+            <input v-model="borrowForm.dueDate" type="date" @input="borrowForm.dueDateEdited = true" />
+            <button class="button button-text" type="button" @click="clearDueDate">清除日期</button>
           </span>
         </label>
         <label class="field">

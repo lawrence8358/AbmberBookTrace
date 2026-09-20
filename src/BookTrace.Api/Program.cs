@@ -35,6 +35,7 @@ using (var scope = app.Services.CreateScope())
     }
     database.Database.EnsureCreated();
     EnsureBookColumns(database);
+    SqliteSchemaUpgrade.EnsureBorrowingRecordSchema(database);
     await RecycleBinMaintenance.PurgeExpiredDeletedBooksAsync(
         database,
         scope.ServiceProvider.GetRequiredService<TimeProvider>(),
@@ -261,18 +262,12 @@ app.MapPost("/api/books", async (
     var now = timeProvider.GetUtcNow().UtcDateTime;
     var book = new Book
     {
-        Title = request.Title.Trim(),
-        Author = TrimToNull(request.Author),
-        Isbn = TrimToNull(request.Isbn),
-        Publisher = TrimToNull(request.Publisher),
-        Category = TrimToNull(request.Category),
-        Location = TrimToNull(request.Location),
-        DetailedLocation = TrimToNull(request.DetailedLocation),
-        Notes = TrimToNull(request.Notes),
         Status = BookStatus.Home,
         CreatedAtUtc = now,
         UpdatedAtUtc = now,
     };
+    ApplyBookFields(book, request.Title, request.Author, request.Isbn, request.Publisher,
+        request.Category, request.Location, request.DetailedLocation, request.Notes);
 
     database.Books.Add(book);
     await database.SaveChangesAsync(cancellationToken);
@@ -304,14 +299,8 @@ app.MapPut("/api/books/{id:int}", async (
         return Results.NotFound(new { message = "找不到這本書。" });
     }
 
-    book.Title = request.Title.Trim();
-    book.Author = TrimToNull(request.Author);
-    book.Isbn = TrimToNull(request.Isbn);
-    book.Publisher = TrimToNull(request.Publisher);
-    book.Category = TrimToNull(request.Category);
-    book.Location = TrimToNull(request.Location);
-    book.DetailedLocation = TrimToNull(request.DetailedLocation);
-    book.Notes = TrimToNull(request.Notes);
+    ApplyBookFields(book, request.Title, request.Author, request.Isbn, request.Publisher,
+        request.Category, request.Location, request.DetailedLocation, request.Notes);
     book.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
 
     await database.SaveChangesAsync(cancellationToken);
@@ -581,6 +570,27 @@ app.Run();
 
 static string? TrimToNull(string? value) =>
     string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+static void ApplyBookFields(
+    Book book,
+    string? title,
+    string? author,
+    string? isbn,
+    string? publisher,
+    string? category,
+    string? location,
+    string? detailedLocation,
+    string? notes)
+{
+    book.Title = title?.Trim() ?? string.Empty;
+    book.Author = TrimToNull(author);
+    book.Isbn = TrimToNull(isbn);
+    book.Publisher = TrimToNull(publisher);
+    book.Category = TrimToNull(category);
+    book.Location = TrimToNull(location);
+    book.DetailedLocation = TrimToNull(detailedLocation);
+    book.Notes = TrimToNull(notes);
+}
 
 static void EnsureBookColumns(BookDbContext database)
 {
