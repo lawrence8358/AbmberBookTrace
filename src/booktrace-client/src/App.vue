@@ -15,6 +15,8 @@ import { RouterLink, RouterView } from "vue-router";
         </RouterLink>
         <nav class="main-nav" aria-label="主要導覽">
           <RouterLink to="/books">我的書庫</RouterLink>
+          <RouterLink to="/borrowings">借閱歷史</RouterLink>
+          <RouterLink to="/notifications">提醒</RouterLink>
           <RouterLink class="nav-primary" to="/books/new">新增書籍</RouterLink>
         </nav>
       </div>

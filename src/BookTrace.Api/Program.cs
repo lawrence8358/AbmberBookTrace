@@ -11,6 +11,17 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("BookTrace")
     ?? "Data Source=booktrace.db";
 builder.Services.AddDbContext<BookDbContext>(options => options.UseSqlite(connectionString));
+builder.Services.AddSingleton<TimeProvider>(_ =>
+{
+    var configuredNow = Environment.GetEnvironmentVariable("BOOKTRACE_NOW_UTC");
+    if (builder.Environment.IsEnvironment("Playwright")
+        && DateTimeOffset.TryParse(configuredNow, out var fixedNow))
+    {
+        return new FixedTimeProvider(fixedNow.ToUniversalTime());
+    }
+
+    return TimeProvider.System;
+});
 
 var app = builder.Build();
 
@@ -111,6 +122,89 @@ app.MapGet("/api/books/{id:int}", async (
         : Results.Ok(BookResponse.From(book, book.BorrowingRecords.SingleOrDefault()));
 });
 
+app.MapGet("/api/books/{id:int}/borrowing-history", async (
+    int id,
+    BookDbContext database,
+    CancellationToken cancellationToken) =>
+{
+    var bookExists = await database.Books
+        .AsNoTracking()
+        .AnyAsync(book => book.Id == id, cancellationToken);
+    if (!bookExists)
+    {
+        return Results.NotFound(new { message = "找不到這本書。" });
+    }
+
+    var history = await database.BorrowingRecords
+        .AsNoTracking()
+        .Include(record => record.Book)
+        .Where(record => record.BookId == id)
+        .OrderByDescending(record => record.BorrowDateUtc)
+        .ThenByDescending(record => record.Id)
+        .ToListAsync(cancellationToken);
+
+    return Results.Ok(history.Select(BorrowingHistoryResponse.From).ToList());
+});
+
+app.MapGet("/api/borrowings", async (
+    string? status,
+    BookDbContext database,
+    CancellationToken cancellationToken) =>
+{
+    var historyQuery = database.BorrowingRecords
+        .AsNoTracking()
+        .Include(record => record.Book)
+        .AsQueryable();
+
+    if (!string.IsNullOrWhiteSpace(status)
+        && !status.Equals("ALL", StringComparison.OrdinalIgnoreCase))
+    {
+        if (status.Equals("CURRENT", StringComparison.OrdinalIgnoreCase))
+        {
+            historyQuery = historyQuery.Where(record => record.ReturnedAtUtc == null);
+        }
+        else if (status.Equals("RETURNED", StringComparison.OrdinalIgnoreCase))
+        {
+            historyQuery = historyQuery.Where(record => record.ReturnedAtUtc != null);
+        }
+        else
+        {
+            return Results.BadRequest(new { message = "無法辨識這個借閱歷史篩選。" });
+        }
+    }
+
+    var history = await historyQuery
+        .OrderBy(record => record.ReturnedAtUtc != null)
+        .ThenByDescending(record => record.BorrowDateUtc)
+        .ThenByDescending(record => record.Id)
+        .ToListAsync(cancellationToken);
+
+    return Results.Ok(history.Select(BorrowingHistoryResponse.From).ToList());
+});
+
+app.MapGet("/api/reminders", async (
+    BookDbContext database,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken) =>
+{
+    var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
+    var tomorrow = today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc).AddDays(1);
+    var records = await database.BorrowingRecords
+        .AsNoTracking()
+        .Include(record => record.Book)
+        .Where(record => record.ReturnedAtUtc == null
+            && record.DueDateUtc != null
+            && record.DueDateUtc < tomorrow)
+        .OrderBy(record => record.DueDateUtc)
+        .ThenBy(record => record.BorrowDateUtc)
+        .ToListAsync(cancellationToken);
+
+    return Results.Ok(records
+        .Where(record => DateOnly.FromDateTime(record.DueDateUtc!.Value) <= today)
+        .Select(record => BorrowingReminderResponse.From(record, today))
+        .ToList());
+});
+
 app.MapGet("/api/books/{id:int}/cover", async (
     int id,
     BookDbContext database,
@@ -130,6 +224,7 @@ app.MapGet("/api/books/{id:int}/cover", async (
 app.MapPost("/api/books", async (
     CreateBookRequest request,
     BookDbContext database,
+    TimeProvider timeProvider,
     CancellationToken cancellationToken) =>
 {
     if (string.IsNullOrWhiteSpace(request.Title))
@@ -141,7 +236,7 @@ app.MapPost("/api/books", async (
         });
     }
 
-    var now = DateTime.UtcNow;
+    var now = timeProvider.GetUtcNow().UtcDateTime;
     var book = new Book
     {
         Title = request.Title.Trim(),
@@ -167,6 +262,7 @@ app.MapPost("/api/books/{id:int}/borrow", async (
     int id,
     BorrowBookRequest request,
     BookDbContext database,
+    TimeProvider timeProvider,
     CancellationToken cancellationToken) =>
 {
     var book = await database.Books
@@ -192,7 +288,7 @@ app.MapPost("/api/books/{id:int}/borrow", async (
         });
     }
 
-    var borrowDateUtc = DateTime.UtcNow;
+    var borrowDateUtc = timeProvider.GetUtcNow().UtcDateTime;
     DateTime? dueDateUtc = request.ClearDueDate
         ? (DateTime?)null
         : request.DueDate is null
@@ -219,6 +315,7 @@ app.MapPost("/api/books/{id:int}/borrow", async (
 app.MapPost("/api/books/{id:int}/return", async (
     int id,
     BookDbContext database,
+    TimeProvider timeProvider,
     CancellationToken cancellationToken) =>
 {
     var book = await database.Books
@@ -236,7 +333,7 @@ app.MapPost("/api/books/{id:int}/return", async (
         return Results.Conflict(new { message = "只有借出中的書籍可以歸還。" });
     }
 
-    var returnedAtUtc = DateTime.UtcNow;
+    var returnedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
     currentBorrowing.ReturnedAtUtc = returnedAtUtc;
     book.Status = BookStatus.Home;
     book.UpdatedAtUtc = returnedAtUtc;
@@ -250,6 +347,7 @@ app.MapPost("/api/books/{id:int}/cover", async (
     int id,
     IFormFile? cover,
     BookDbContext database,
+    TimeProvider timeProvider,
     CancellationToken cancellationToken) =>
 {
     if (cover is null)
@@ -281,7 +379,7 @@ app.MapPost("/api/books/{id:int}/cover", async (
     book.CoverImageData = upload.Content;
     book.CoverContentType = upload.ContentType;
     book.CoverFileName = Path.GetFileName(cover.FileName);
-    book.UpdatedAtUtc = DateTime.UtcNow;
+    book.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
     await database.SaveChangesAsync(cancellationToken);
 
     return Results.Ok(BookResponse.From(book));
@@ -290,6 +388,7 @@ app.MapPost("/api/books/{id:int}/cover", async (
 app.MapDelete("/api/books/{id:int}/cover", async (
     int id,
     BookDbContext database,
+    TimeProvider timeProvider,
     CancellationToken cancellationToken) =>
 {
     var book = await database.Books
@@ -307,7 +406,7 @@ app.MapDelete("/api/books/{id:int}/cover", async (
     book.CoverImageData = null;
     book.CoverContentType = null;
     book.CoverFileName = null;
-    book.UpdatedAtUtc = DateTime.UtcNow;
+    book.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
     await database.SaveChangesAsync(cancellationToken);
 
     return Results.NoContent();
@@ -419,6 +518,13 @@ static bool IsSupportedCoverType(string contentType) => contentType is
 sealed record CoverUploadResult(byte[]? Content, string? ContentType, string? Error)
 {
     public static CoverUploadResult Invalid(string error) => new(null, null, error);
+}
+
+sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+{
+    private long callCount;
+
+    public override DateTimeOffset GetUtcNow() => now.AddTicks(Interlocked.Increment(ref callCount));
 }
 
 public partial class Program;

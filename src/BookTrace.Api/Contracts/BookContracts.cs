@@ -35,6 +35,63 @@ public sealed record BorrowingRecordResponse(
         record.Note);
 }
 
+public sealed record BorrowingHistoryResponse(
+    int Id,
+    int BookId,
+    string BookTitle,
+    string? BookAuthor,
+    string? CoverUrl,
+    string BorrowerName,
+    DateTime BorrowDateUtc,
+    DateOnly? DueDate,
+    DateTime? ReturnedAtUtc,
+    string? Note,
+    string Status)
+{
+    public static BorrowingHistoryResponse From(BorrowingRecord record) => new(
+        record.Id,
+        record.BookId,
+        record.Book.Title,
+        record.Book.Author,
+        record.Book.CoverImageData is null
+            ? null
+            : $"/api/books/{record.BookId}/cover?v={record.Book.UpdatedAtUtc.Ticks}",
+        record.BorrowerName,
+        record.BorrowDateUtc,
+        record.DueDateUtc is null ? null : DateOnly.FromDateTime(record.DueDateUtc.Value),
+        record.ReturnedAtUtc,
+        record.Note,
+        record.ReturnedAtUtc is null ? "CURRENT" : "RETURNED");
+}
+
+public sealed record BorrowingReminderResponse(
+    int BorrowingRecordId,
+    int BookId,
+    string BookTitle,
+    string? BookAuthor,
+    string? CoverUrl,
+    string BorrowerName,
+    DateOnly DueDate,
+    string ReminderType,
+    int DaysOverdue)
+{
+    public static BorrowingReminderResponse From(BorrowingRecord record, DateOnly today) =>
+        new(
+            record.Id,
+            record.BookId,
+            record.Book.Title,
+            record.Book.Author,
+            record.Book.CoverImageData is null
+                ? null
+                : $"/api/books/{record.BookId}/cover?v={record.Book.UpdatedAtUtc.Ticks}",
+            record.BorrowerName,
+            DateOnly.FromDateTime(record.DueDateUtc!.Value),
+            DateOnly.FromDateTime(record.DueDateUtc.Value) < today ? "OVERDUE" : "DUE_TODAY",
+            DateOnly.FromDateTime(record.DueDateUtc.Value) < today
+                ? today.DayNumber - DateOnly.FromDateTime(record.DueDateUtc.Value).DayNumber
+                : 0);
+}
+
 public sealed record BookResponse(
     int Id,
     string Title,

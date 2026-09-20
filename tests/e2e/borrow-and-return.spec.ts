@@ -39,16 +39,17 @@ test("user can borrow a book, see current borrowing details, and return it", asy
   await page.getByRole("button", { name: "確認借出" }).click();
 
   await expect(page.getByRole("heading", { name: "借閱狀態" })).toBeVisible();
-  await expect(page.getByText("借閱人")).toBeVisible();
-  await expect(page.getByText("小美", { exact: true })).toBeVisible();
-  await expect(page.getByText("借出備註")).toBeVisible();
-  await expect(page.getByText("下星期還", { exact: true })).toBeVisible();
-  await expect(page.getByText("未設定", { exact: true })).toBeVisible();
-  await expect(page.getByText("借出日期")).toBeVisible();
+  const currentBorrowingDetails = page.locator(".borrowing-details");
+  await expect(currentBorrowingDetails.getByText("借閱人")).toBeVisible();
+  await expect(currentBorrowingDetails.getByText("小美", { exact: true })).toBeVisible();
+  await expect(currentBorrowingDetails.getByText("借出備註")).toBeVisible();
+  await expect(currentBorrowingDetails.getByText("下星期還", { exact: true })).toBeVisible();
+  await expect(currentBorrowingDetails.getByText("未設定", { exact: true })).toBeVisible();
+  await expect(currentBorrowingDetails.getByText("借出日期")).toBeVisible();
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "借閱狀態" })).toBeVisible();
-  await expect(page.getByText("小美", { exact: true })).toBeVisible();
+  await expect(page.locator(".borrowing-details").getByText("小美", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "已歸還" }).click();
   await expect(page.getByRole("heading", { name: "借閱狀態" })).toBeVisible();

@@ -27,6 +27,31 @@ export interface BorrowingRecord {
   note: string | null;
 }
 
+export type BorrowingHistoryStatus = "CURRENT" | "RETURNED";
+export type BorrowingHistoryFilter = "ALL" | BorrowingHistoryStatus;
+
+export interface BorrowingHistoryRecord extends BorrowingRecord {
+  bookId: number;
+  bookTitle: string;
+  bookAuthor: string | null;
+  coverUrl: string | null;
+  status: BorrowingHistoryStatus;
+}
+
+export type ReminderType = "DUE_TODAY" | "OVERDUE";
+
+export interface BorrowingReminder {
+  borrowingRecordId: number;
+  bookId: number;
+  bookTitle: string;
+  bookAuthor: string | null;
+  coverUrl: string | null;
+  borrowerName: string;
+  dueDate: string;
+  reminderType: ReminderType;
+  daysOverdue: number;
+}
+
 export interface LibraryStats {
   totalCount: number;
   homeCount: number;
@@ -100,6 +125,21 @@ export function getLibraryStats(): Promise<LibraryStats> {
 
 export function getBook(id: string): Promise<Book> {
   return request<Book>(`/api/books/${id}`);
+}
+
+export function getBookBorrowingHistory(id: number): Promise<BorrowingHistoryRecord[]> {
+  return request<BorrowingHistoryRecord[]>(`/api/books/${id}/borrowing-history`);
+}
+
+export function getBorrowingHistory(
+  status: BorrowingHistoryFilter = "ALL",
+): Promise<BorrowingHistoryRecord[]> {
+  const query = status === "ALL" ? "" : `?status=${status}`;
+  return request<BorrowingHistoryRecord[]>(`/api/borrowings${query}`);
+}
+
+export function getReminders(): Promise<BorrowingReminder[]> {
+  return request<BorrowingReminder[]>("/api/reminders");
 }
 
 export function createBook(input: CreateBookInput): Promise<Book> {

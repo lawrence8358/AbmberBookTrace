@@ -4,8 +4,10 @@ import { RouterLink, useRoute } from "vue-router";
 import {
   borrowBook,
   getBook,
+  getBookBorrowingHistory,
   removeBookCover,
   returnBook,
+  type BorrowingHistoryRecord,
   type Book,
   uploadBookCover,
 } from "../api";
@@ -21,6 +23,9 @@ const borrowerError = ref("");
 const isBorrowFormOpen = ref(false);
 const isSavingBorrow = ref(false);
 const isReturning = ref(false);
+const borrowingHistory = ref<BorrowingHistoryRecord[]>([]);
+const isHistoryLoading = ref(true);
+const historyError = ref("");
 const borrowForm = reactive({
   borrowerName: "",
   dueDate: "",
@@ -45,6 +50,24 @@ function formatDate(value: string | null) {
     month: "numeric",
     day: "numeric",
   }).format(date);
+}
+
+async function loadHistory() {
+  if (!book.value) {
+    return;
+  }
+
+  isHistoryLoading.value = true;
+  historyError.value = "";
+  try {
+    borrowingHistory.value = await getBookBorrowingHistory(book.value.id);
+  } catch (error) {
+    historyError.value = error instanceof Error
+      ? error.message
+      : "目前無法載入借閱歷史，請稍後再試。";
+  } finally {
+    isHistoryLoading.value = false;
+  }
 }
 
 function openBorrowForm() {
@@ -85,6 +108,7 @@ async function submitBorrow() {
       note: borrowForm.note,
       clearDueDate: !borrowForm.dueDate,
     });
+    await loadHistory();
     isBorrowFormOpen.value = false;
   } catch (error) {
     borrowError.value = error instanceof Error
@@ -104,6 +128,7 @@ async function markAsReturned() {
   isReturning.value = true;
   try {
     book.value = await returnBook(book.value.id);
+    await loadHistory();
   } catch (error) {
     borrowError.value = error instanceof Error
       ? error.message
@@ -120,6 +145,7 @@ const isCoverSaving = ref(false);
 async function loadBook() {
   try {
     book.value = await getBook(String(route.params.id));
+    await loadHistory();
   } catch (error) {
     errorMessage.value = error instanceof Error
       ? error.message
@@ -284,6 +310,39 @@ onMounted(loadBook);
         <div v-if="book.currentBorrowing.note"><dt>借出備註</dt><dd>{{ book.currentBorrowing.note }}</dd></div>
       </dl>
       <p v-else class="empty-borrowing">目前沒有借閱中的資料</p>
+    </section>
+
+    <section class="detail-card borrowing-history-card" aria-labelledby="borrowing-history-title">
+      <div class="detail-card-heading">
+        <div>
+          <p class="detail-label">完整流轉</p>
+          <h2 id="borrowing-history-title">借閱歷史</h2>
+        </div>
+        <span class="section-note">{{ borrowingHistory.length }} 筆紀錄</span>
+      </div>
+
+      <p v-if="historyError" class="feedback feedback-error" role="alert">{{ historyError }}</p>
+      <p v-else-if="isHistoryLoading" class="loading-inline" role="status">正在載入歷史⋯</p>
+      <div v-else-if="borrowingHistory.length" class="detail-history-list">
+        <article
+          v-for="record in borrowingHistory"
+          :key="record.id"
+          class="detail-history-record"
+          :data-history-status="record.status"
+        >
+          <div class="detail-history-heading">
+            <strong>{{ record.status === "CURRENT" ? "目前借閱" : "已歸還" }}</strong>
+            <span>{{ formatDate(record.borrowDateUtc) }}</span>
+          </div>
+          <dl class="metadata-list history-metadata">
+            <div><dt>借閱人</dt><dd>{{ record.borrowerName }}</dd></div>
+            <div><dt>預計歸還日期</dt><dd>{{ formatDate(record.dueDate) }}</dd></div>
+            <div><dt>實際歸還日期</dt><dd>{{ formatDate(record.returnedAtUtc) }}</dd></div>
+            <div v-if="record.note"><dt>借出備註</dt><dd>{{ record.note }}</dd></div>
+          </dl>
+        </article>
+      </div>
+      <p v-else class="empty-borrowing">這本書還沒有借閱紀錄</p>
     </section>
 
     <section v-if="book.notes" class="detail-card notes-card">

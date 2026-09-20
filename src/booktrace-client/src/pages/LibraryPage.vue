@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
-import { getBooks, getLibraryStats, type Book, type BookStatusFilter, type LibraryStats } from "../api";
+import {
+  getBooks,
+  getLibraryStats,
+  getReminders,
+  type Book,
+  type BookStatusFilter,
+  type BorrowingReminder,
+  type LibraryStats,
+} from "../api";
+import ReminderList from "../components/ReminderList.vue";
 import StatusBadge from "../components/StatusBadge.vue";
 
 const books = ref<Book[]>([]);
@@ -12,6 +21,9 @@ const isLoading = ref(true);
 const isStatsLoading = ref(true);
 const errorMessage = ref("");
 const statsErrorMessage = ref("");
+const reminders = ref<BorrowingReminder[]>([]);
+const isRemindersLoading = ref(true);
+const remindersErrorMessage = ref("");
 let latestBooksRequest = 0;
 
 const statusFilters: Array<{ value: BookStatusFilter; label: string }> = [
@@ -64,6 +76,21 @@ async function loadStats() {
   }
 }
 
+async function loadReminders() {
+  isRemindersLoading.value = true;
+  remindersErrorMessage.value = "";
+
+  try {
+    reminders.value = await getReminders();
+  } catch (error) {
+    remindersErrorMessage.value = error instanceof Error
+      ? error.message
+      : "目前無法載入借閱提醒，請稍後再試。";
+  } finally {
+    isRemindersLoading.value = false;
+  }
+}
+
 function clearFilters() {
   search.value = "";
   selectedStatus.value = "ALL";
@@ -76,6 +103,7 @@ watch([search, selectedStatus], () => {
 onMounted(() => {
   void loadBooks();
   void loadStats();
+  void loadReminders();
 });
 </script>
 
@@ -143,6 +171,22 @@ onMounted(() => {
         <strong v-else aria-label="統計載入中">…</strong>
       </div>
     </article>
+  </section>
+
+  <p v-if="remindersErrorMessage" class="feedback feedback-error" role="alert">{{ remindersErrorMessage }}</p>
+  <section
+    v-else-if="!isRemindersLoading && reminders.length"
+    class="reminders-summary"
+    aria-labelledby="reminders-summary-title"
+  >
+    <div class="section-heading-row">
+      <div>
+        <p class="eyebrow">借閱狀態</p>
+        <h2 id="reminders-summary-title">借閱提醒</h2>
+      </div>
+      <RouterLink class="text-link" to="/notifications">查看全部提醒 →</RouterLink>
+    </div>
+    <ReminderList :reminders="reminders" />
   </section>
 
   <section v-if="!isStatsLoading && stats?.recentBooks.length" class="recent-section" aria-labelledby="recent-books-title">

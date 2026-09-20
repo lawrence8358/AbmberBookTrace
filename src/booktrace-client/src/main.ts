@@ -4,6 +4,8 @@ import App from "./App.vue";
 import BookDetailPage from "./pages/BookDetailPage.vue";
 import BookFormPage from "./pages/BookFormPage.vue";
 import LibraryPage from "./pages/LibraryPage.vue";
+import BorrowingHistoryPage from "./pages/BorrowingHistoryPage.vue";
+import NotificationsPage from "./pages/NotificationsPage.vue";
 import "./style.css";
 
 const router = createRouter({
@@ -11,6 +13,8 @@ const router = createRouter({
   routes: [
     { path: "/", redirect: "/books" },
     { path: "/books", component: LibraryPage },
+    { path: "/borrowings", component: BorrowingHistoryPage },
+    { path: "/notifications", component: NotificationsPage },
     { path: "/books/new", component: BookFormPage },
     { path: "/books/:id", component: BookDetailPage },
   ],
