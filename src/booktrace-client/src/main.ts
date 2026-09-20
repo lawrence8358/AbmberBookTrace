@@ -11,6 +11,13 @@ import "./style.css";
 
 const router = createRouter({
   history: createWebHistory(),
+  scrollBehavior(to) {
+    if (to.hash) {
+      return { el: to.hash, behavior: "smooth" };
+    }
+
+    return { top: 0 };
+  },
   routes: [
     { path: "/", redirect: "/books" },
     { path: "/books", component: LibraryPage },

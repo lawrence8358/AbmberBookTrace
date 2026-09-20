@@ -117,7 +117,7 @@ onMounted(() => {
     <RouterLink class="button button-primary" to="/books/new">＋ 新增書籍</RouterLink>
   </section>
 
-  <section class="library-tools" aria-label="書庫搜尋與篩選">
+  <section id="library-search" class="library-tools" aria-label="書庫搜尋與篩選">
     <label class="search-field">
       <span class="search-icon" aria-hidden="true">⌕</span>
       <span class="sr-only">搜尋書名、作者或 ISBN</span>
