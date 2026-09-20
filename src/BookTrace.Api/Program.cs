@@ -378,7 +378,7 @@ app.MapPost("/api/recycle-bin/{id:int}/restore", async (
     }
 
     var now = timeProvider.GetUtcNow().UtcDateTime;
-    if (book.DeletedAtUtc.Value <= now.AddDays(-30))
+    if (book.DeletedAtUtc.Value < now.AddDays(-30))
     {
         await database.BorrowingRecords
             .Where(record => record.BookId == book.Id)
@@ -743,7 +743,7 @@ static class RecycleBinMaintenance
             .Include(book => book.BorrowingRecords)
             .Where(book => book.IsDeleted
                 && book.DeletedAtUtc != null
-                && book.DeletedAtUtc <= expirationCutoff)
+                && book.DeletedAtUtc < expirationCutoff)
             .ToListAsync(cancellationToken);
 
         if (expiredBooks.Count == 0)
