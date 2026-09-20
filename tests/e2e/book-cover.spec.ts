@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { useFixedClock } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -43,6 +44,37 @@ test("desktop user can add, replace, remove, and persist a book cover", async ({
 
   await page.reload();
   await expect(page.getByText("尚未上傳封面")).toBeVisible();
+});
+
+test("replacing a cover keeps current borrowing details on the detail page", async ({ page }) => {
+  await useFixedClock(page);
+  await page.goto("/books/new");
+  await page.getByLabel("書名（必填）", { exact: true }).fill("借出中封面替換測試書");
+  await page.getByRole("button", { name: "儲存書籍" }).click();
+  await expect(page).toHaveURL(/\/books\/\d+$/);
+
+  const bookId = Number(new URL(page.url()).pathname.split("/").pop());
+  const borrowResponse = await page.request.post(`/api/books/${bookId}/borrow`, {
+    data: {
+      borrowerName: "封面替換借閱人",
+      dueDate: "2026-10-04",
+      note: "封面替換時仍應保留",
+      clearDueDate: false,
+    },
+  });
+  expect(borrowResponse.ok()).toBeTruthy();
+  await page.reload();
+
+  await page.locator("#detail-book-cover-gallery-input").setInputFiles({
+    name: "borrowed-book-cover.png",
+    mimeType: "image/png",
+    buffer: validPng,
+  });
+
+  await expect(page.getByText("封面已更新。", { exact: true })).toBeVisible();
+  const currentBorrowingDetails = page.locator(".borrowing-details");
+  await expect(currentBorrowingDetails.getByText("封面替換借閱人", { exact: true })).toBeVisible();
+  await expect(currentBorrowingDetails.getByText("2026/10/4", { exact: true })).toBeVisible();
 });
 
 test("desktop user receives understandable cover validation errors", async ({ page }) => {

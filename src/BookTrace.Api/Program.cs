@@ -209,15 +209,15 @@ app.MapGet("/api/reminders", async (
     TimeProvider timeProvider,
     CancellationToken cancellationToken) =>
 {
-    var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
-    var tomorrow = today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc).AddDays(1);
+    var today = DateOnly.FromDateTime(timeProvider.GetLocalNow().DateTime);
+    var tomorrowUtc = today.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
     var records = await database.BorrowingRecords
         .AsNoTracking()
         .Include(record => record.Book)
         .Where(record => record.ReturnedAtUtc == null
             && !record.Book.IsDeleted
             && record.DueDateUtc != null
-            && record.DueDateUtc < tomorrow)
+            && record.DueDateUtc < tomorrowUtc)
         .OrderBy(record => record.DueDateUtc)
         .ThenBy(record => record.BorrowDateUtc)
         .ToListAsync(cancellationToken);
@@ -441,10 +441,11 @@ app.MapPost("/api/books/{id:int}/borrow", async (
     }
 
     var borrowDateUtc = timeProvider.GetUtcNow().UtcDateTime;
+    var localBorrowDate = DateOnly.FromDateTime(timeProvider.GetLocalNow().DateTime);
     DateTime? dueDateUtc = request.ClearDueDate
         ? (DateTime?)null
         : request.DueDate is null
-            ? DateTime.SpecifyKind(borrowDateUtc.Date.AddDays(14), DateTimeKind.Utc)
+            ? localBorrowDate.AddDays(14).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
             : request.DueDate.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
     var record = new BorrowingRecord
     {
@@ -522,6 +523,8 @@ app.MapPost("/api/books/{id:int}/cover", async (
     }
 
     var book = await database.Books
+        .Include(candidate => candidate.BorrowingRecords
+            .Where(record => record.ReturnedAtUtc == null))
         .SingleOrDefaultAsync(candidate => candidate.Id == id && !candidate.IsDeleted, cancellationToken);
     if (book is null)
     {
@@ -534,7 +537,9 @@ app.MapPost("/api/books/{id:int}/cover", async (
     book.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
     await database.SaveChangesAsync(cancellationToken);
 
-    return Results.Ok(BookResponse.From(book));
+    return Results.Ok(BookResponse.From(
+        book,
+        book.BorrowingRecords.SingleOrDefault()));
 }).DisableAntiforgery();
 
 app.MapDelete("/api/books/{id:int}/cover", async (

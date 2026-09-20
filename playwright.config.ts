@@ -22,7 +22,7 @@ export default defineConfig({
     url: `http://127.0.0.1:${e2ePort}/health`,
     env: {
       ASPNETCORE_ENVIRONMENT: "Playwright",
-      BOOKTRACE_NOW_UTC: "2026-09-20T09:00:00.000Z",
+      BOOKTRACE_NOW_UTC: process.env.BOOKTRACE_NOW_UTC ?? "2026-09-20T09:00:00.000Z",
     },
     reuseExistingServer: false,
     timeout: 120_000,
