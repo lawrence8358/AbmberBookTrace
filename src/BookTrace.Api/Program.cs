@@ -98,11 +98,13 @@ app.MapGet("/api/books/{id:int}", async (
 {
     var book = await database.Books
         .AsNoTracking()
+        .Include(candidate => candidate.BorrowingRecords
+            .Where(record => record.ReturnedAtUtc == null))
         .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
 
     return book is null
         ? Results.NotFound(new { message = "找不到這本書。" })
-        : Results.Ok(BookResponse.From(book));
+        : Results.Ok(BookResponse.From(book, book.BorrowingRecords.SingleOrDefault()));
 });
 
 app.MapPost("/api/books", async (
@@ -139,6 +141,90 @@ app.MapPost("/api/books", async (
     await database.SaveChangesAsync(cancellationToken);
 
     return Results.Created($"/api/books/{book.Id}", BookResponse.From(book));
+});
+
+app.MapPost("/api/books/{id:int}/borrow", async (
+    int id,
+    BorrowBookRequest request,
+    BookDbContext database,
+    CancellationToken cancellationToken) =>
+{
+    var book = await database.Books
+        .Include(candidate => candidate.BorrowingRecords)
+        .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+
+    if (book is null)
+    {
+        return Results.NotFound(new { message = "找不到這本書。" });
+    }
+
+    if (book.Status != BookStatus.Home || book.BorrowingRecords.Any(record => record.ReturnedAtUtc == null))
+    {
+        return Results.Conflict(new { message = "這本書目前已經借出中，無法重複借出。" });
+    }
+
+    if (string.IsNullOrWhiteSpace(request.BorrowerName))
+    {
+        return Results.BadRequest(new
+        {
+            message = "請輸入借閱人，才能完成借出。",
+            errors = new { borrowerName = "借閱人是必填欄位。" },
+        });
+    }
+
+    var borrowDateUtc = DateTime.UtcNow;
+    DateTime? dueDateUtc = request.ClearDueDate
+        ? (DateTime?)null
+        : request.DueDate is null
+            ? DateTime.SpecifyKind(borrowDateUtc.Date.AddDays(14), DateTimeKind.Utc)
+            : request.DueDate.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+    var record = new BorrowingRecord
+    {
+        BookId = book.Id,
+        BorrowerName = request.BorrowerName.Trim(),
+        BorrowDateUtc = borrowDateUtc,
+        DueDateUtc = dueDateUtc,
+        Note = TrimToNull(request.Note),
+    };
+
+    book.Status = BookStatus.Borrowed;
+    book.UpdatedAtUtc = borrowDateUtc;
+    book.BorrowingRecords.Add(record);
+
+    await database.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(BookResponse.From(book, record));
+});
+
+app.MapPost("/api/books/{id:int}/return", async (
+    int id,
+    BookDbContext database,
+    CancellationToken cancellationToken) =>
+{
+    var book = await database.Books
+        .Include(candidate => candidate.BorrowingRecords)
+        .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+
+    if (book is null)
+    {
+        return Results.NotFound(new { message = "找不到這本書。" });
+    }
+
+    var currentBorrowing = book.BorrowingRecords
+        .SingleOrDefault(record => record.ReturnedAtUtc == null);
+    if (book.Status != BookStatus.Borrowed || currentBorrowing is null)
+    {
+        return Results.Conflict(new { message = "只有借出中的書籍可以歸還。" });
+    }
+
+    var returnedAtUtc = DateTime.UtcNow;
+    currentBorrowing.ReturnedAtUtc = returnedAtUtc;
+    book.Status = BookStatus.Home;
+    book.UpdatedAtUtc = returnedAtUtc;
+
+    await database.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(BookResponse.From(book));
 });
 
 app.MapFallbackToFile("index.html");

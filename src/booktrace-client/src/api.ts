@@ -14,6 +14,16 @@ export interface Book {
   status: BookStatus;
   createdAtUtc: string;
   updatedAtUtc: string;
+  currentBorrowing: BorrowingRecord | null;
+}
+
+export interface BorrowingRecord {
+  id: number;
+  borrowerName: string;
+  borrowDateUtc: string;
+  dueDate: string | null;
+  returnedAtUtc: string | null;
+  note: string | null;
 }
 
 export interface LibraryStats {
@@ -32,6 +42,13 @@ export interface CreateBookInput {
   location: string;
   detailedLocation: string;
   notes: string;
+}
+
+export interface BorrowBookInput {
+  borrowerName: string;
+  dueDate: string | null;
+  note: string;
+  clearDueDate: boolean;
 }
 
 interface ApiErrorBody {
@@ -83,5 +100,18 @@ export function createBook(input: CreateBookInput): Promise<Book> {
   return request<Book>("/api/books", {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+export function borrowBook(id: number, input: BorrowBookInput): Promise<Book> {
+  return request<Book>(`/api/books/${id}/borrow`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function returnBook(id: number): Promise<Book> {
+  return request<Book>(`/api/books/${id}/return`, {
+    method: "POST",
   });
 }

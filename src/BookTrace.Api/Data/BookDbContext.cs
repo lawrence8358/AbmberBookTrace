@@ -6,6 +6,7 @@ namespace BookTrace.Api.Data;
 public sealed class BookDbContext(DbContextOptions<BookDbContext> options) : DbContext(options)
 {
     public DbSet<Book> Books => Set<Book>();
+    public DbSet<BorrowingRecord> BorrowingRecords => Set<BorrowingRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -20,6 +21,16 @@ public sealed class BookDbContext(DbContextOptions<BookDbContext> options) : DbC
             entity.Property(book => book.DetailedLocation).HasMaxLength(200);
             entity.Property(book => book.Notes).HasMaxLength(2000);
             entity.Property(book => book.Status).HasConversion<string>().HasMaxLength(20);
+            entity.HasMany(book => book.BorrowingRecords)
+                .WithOne(record => record.Book)
+                .HasForeignKey(record => record.BookId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BorrowingRecord>(entity =>
+        {
+            entity.Property(record => record.BorrowerName).IsRequired().HasMaxLength(200);
+            entity.Property(record => record.Note).HasMaxLength(2000);
         });
     }
 }

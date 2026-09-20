@@ -20,4 +20,5 @@ public sealed class Book
     public BookStatus Status { get; set; } = BookStatus.Home;
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
+    public ICollection<BorrowingRecord> BorrowingRecords { get; set; } = new List<BorrowingRecord>();
 }

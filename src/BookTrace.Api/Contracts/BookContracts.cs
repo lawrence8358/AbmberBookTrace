@@ -12,6 +12,29 @@ public sealed record CreateBookRequest(
     string? DetailedLocation,
     string? Notes);
 
+public sealed record BorrowBookRequest(
+    string? BorrowerName,
+    DateOnly? DueDate,
+    string? Note,
+    bool ClearDueDate = false);
+
+public sealed record BorrowingRecordResponse(
+    int Id,
+    string BorrowerName,
+    DateTime BorrowDateUtc,
+    DateOnly? DueDate,
+    DateTime? ReturnedAtUtc,
+    string? Note)
+{
+    public static BorrowingRecordResponse From(BorrowingRecord record) => new(
+        record.Id,
+        record.BorrowerName,
+        record.BorrowDateUtc,
+        record.DueDateUtc is null ? null : DateOnly.FromDateTime(record.DueDateUtc.Value),
+        record.ReturnedAtUtc,
+        record.Note);
+}
+
 public sealed record BookResponse(
     int Id,
     string Title,
@@ -24,9 +47,10 @@ public sealed record BookResponse(
     string? Notes,
     string Status,
     DateTime CreatedAtUtc,
-    DateTime UpdatedAtUtc)
+    DateTime UpdatedAtUtc,
+    BorrowingRecordResponse? CurrentBorrowing)
 {
-    public static BookResponse From(Book book) => new(
+    public static BookResponse From(Book book, BorrowingRecord? currentBorrowing = null) => new(
         book.Id,
         book.Title,
         book.Author,
@@ -38,7 +62,8 @@ public sealed record BookResponse(
         book.Notes,
         book.Status == BookStatus.Home ? "HOME" : "BORROWED",
         book.CreatedAtUtc,
-        book.UpdatedAtUtc);
+        book.UpdatedAtUtc,
+        currentBorrowing is null ? null : BorrowingRecordResponse.From(currentBorrowing));
 }
 
 public sealed record LibraryStatsResponse(
