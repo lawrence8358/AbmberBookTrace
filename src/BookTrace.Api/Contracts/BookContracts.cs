@@ -40,3 +40,9 @@ public sealed record BookResponse(
         book.CreatedAtUtc,
         book.UpdatedAtUtc);
 }
+
+public sealed record LibraryStatsResponse(
+    int TotalCount,
+    int HomeCount,
+    int BorrowedCount,
+    IReadOnlyList<BookResponse> RecentBooks);

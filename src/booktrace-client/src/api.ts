@@ -1,4 +1,5 @@
 export type BookStatus = "HOME" | "BORROWED";
+export type BookStatusFilter = "ALL" | BookStatus;
 
 export interface Book {
   id: number;
@@ -13,6 +14,13 @@ export interface Book {
   status: BookStatus;
   createdAtUtc: string;
   updatedAtUtc: string;
+}
+
+export interface LibraryStats {
+  totalCount: number;
+  homeCount: number;
+  borrowedCount: number;
+  recentBooks: Book[];
 }
 
 export interface CreateBookInput {
@@ -45,8 +53,26 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function getBooks(): Promise<Book[]> {
-  return request<Book[]>("/api/books");
+export function getBooks(options: {
+  search?: string;
+  status?: BookStatusFilter;
+} = {}): Promise<Book[]> {
+  const params = new URLSearchParams();
+  const search = options.search?.trim();
+
+  if (search) {
+    params.set("search", search);
+  }
+  if (options.status && options.status !== "ALL") {
+    params.set("status", options.status);
+  }
+
+  const query = params.toString();
+  return request<Book[]>(`/api/books${query ? `?${query}` : ""}`);
+}
+
+export function getLibraryStats(): Promise<LibraryStats> {
+  return request<LibraryStats>("/api/books/stats");
 }
 
 export function getBook(id: string): Promise<Book> {

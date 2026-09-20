@@ -26,15 +26,69 @@ app.UseStaticFiles();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
-app.MapGet("/api/books", async (BookDbContext database, CancellationToken cancellationToken) =>
+app.MapGet("/api/books", async (
+    string? search,
+    string? status,
+    BookDbContext database,
+    CancellationToken cancellationToken) =>
 {
-    var books = await database.Books
-        .AsNoTracking()
-        .OrderByDescending(book => book.CreatedAtUtc)
-        .Select(book => BookResponse.From(book))
+    var booksQuery = database.Books.AsNoTracking();
+    var normalizedSearch = search?.Trim().ToLowerInvariant();
+
+    if (!string.IsNullOrEmpty(normalizedSearch))
+    {
+        booksQuery = booksQuery.Where(book =>
+            book.Title.ToLower().Contains(normalizedSearch)
+            || (book.Author != null && book.Author.ToLower().Contains(normalizedSearch))
+            || (book.Isbn != null && book.Isbn.ToLower().Contains(normalizedSearch)));
+    }
+
+    if (!string.IsNullOrWhiteSpace(status)
+        && !status.Equals("ALL", StringComparison.OrdinalIgnoreCase))
+    {
+        if (!Enum.TryParse<BookStatus>(status, ignoreCase: true, out var requestedStatus))
+        {
+            return Results.BadRequest(new { message = "無法辨識這個書籍狀態篩選。" });
+        }
+
+        booksQuery = booksQuery.Where(book => book.Status == requestedStatus);
+    }
+
+    var books = await booksQuery
+        .Select(book => new
+        {
+            Book = book,
+            HasAuthor = book.Author != null && book.Author != "",
+            AuthorCount = book.Author == null
+                ? 0
+                : database.Books.Count(candidate => candidate.Author == book.Author),
+        })
+        .OrderByDescending(book => book.HasAuthor)
+        .ThenByDescending(book => book.AuthorCount)
+        .ThenBy(book => book.Book.Title.ToLower())
+        .ThenBy(book => book.Book.Id)
+        .Select(book => BookResponse.From(book.Book))
         .ToListAsync(cancellationToken);
 
     return Results.Ok(books);
+});
+
+app.MapGet("/api/books/stats", async (
+    BookDbContext database,
+    CancellationToken cancellationToken) =>
+{
+    var books = database.Books.AsNoTracking();
+    var totalCount = await books.CountAsync(cancellationToken);
+    var homeCount = await books.CountAsync(book => book.Status == BookStatus.Home, cancellationToken);
+    var borrowedCount = await books.CountAsync(book => book.Status == BookStatus.Borrowed, cancellationToken);
+    var recentBooks = await books
+        .OrderByDescending(book => book.CreatedAtUtc)
+        .ThenByDescending(book => book.Id)
+        .Take(4)
+        .Select(book => BookResponse.From(book))
+        .ToListAsync(cancellationToken);
+
+    return Results.Ok(new LibraryStatsResponse(totalCount, homeCount, borrowedCount, recentBooks));
 });
 
 app.MapGet("/api/books/{id:int}", async (
