@@ -21,6 +21,8 @@ public sealed class Book
     public string? CoverContentType { get; set; }
     public string? CoverFileName { get; set; }
     public BookStatus Status { get; set; } = BookStatus.Home;
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
     public ICollection<BorrowingRecord> BorrowingRecords { get; set; } = new List<BorrowingRecord>();

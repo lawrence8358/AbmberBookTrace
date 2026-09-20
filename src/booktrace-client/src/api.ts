@@ -70,6 +70,21 @@ export interface CreateBookInput {
   notes: string;
 }
 
+export type UpdateBookInput = CreateBookInput;
+
+export interface RecycleBinBook {
+  id: number;
+  title: string;
+  author: string | null;
+  coverUrl: string | null;
+  status: BookStatus;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+  deletedAtUtc: string;
+  expiresAtUtc: string;
+  currentBorrowing: BorrowingRecord | null;
+}
+
 export interface BorrowBookInput {
   borrowerName: string;
   dueDate: string | null;
@@ -146,6 +161,29 @@ export function createBook(input: CreateBookInput): Promise<Book> {
   return request<Book>("/api/books", {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+export function updateBook(id: number, input: UpdateBookInput): Promise<Book> {
+  return request<Book>(`/api/books/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteBook(id: number): Promise<RecycleBinBook> {
+  return request<RecycleBinBook>(`/api/books/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export function getRecycleBin(): Promise<RecycleBinBook[]> {
+  return request<RecycleBinBook[]>("/api/recycle-bin");
+}
+
+export function restoreBook(id: number): Promise<Book> {
+  return request<Book>(`/api/recycle-bin/${id}/restore`, {
+    method: "POST",
   });
 }
 

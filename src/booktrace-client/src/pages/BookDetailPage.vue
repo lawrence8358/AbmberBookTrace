@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
-import { RouterLink, useRoute } from "vue-router";
+import { RouterLink, useRoute, useRouter } from "vue-router";
 import {
   borrowBook,
+  deleteBook,
   getBook,
   getBookBorrowingHistory,
   removeBookCover,
@@ -15,6 +16,7 @@ import BookCoverPicker from "../components/BookCoverPicker.vue";
 import StatusBadge from "../components/StatusBadge.vue";
 
 const route = useRoute();
+const router = useRouter();
 const book = ref<Book | null>(null);
 const isLoading = ref(true);
 const errorMessage = ref("");
@@ -26,6 +28,8 @@ const isReturning = ref(false);
 const borrowingHistory = ref<BorrowingHistoryRecord[]>([]);
 const isHistoryLoading = ref(true);
 const historyError = ref("");
+const deleteError = ref("");
+const isDeleting = ref(false);
 const borrowForm = reactive({
   borrowerName: "",
   dueDate: "",
@@ -137,6 +141,28 @@ async function markAsReturned() {
     isReturning.value = false;
   }
 }
+
+async function deleteCurrentBook() {
+  if (!book.value || !window.confirm(
+    `確定要刪除「${book.value.title}」嗎？刪除後會移至資源回收筒，30 天內可以還原。`,
+  )) {
+    return;
+  }
+
+  deleteError.value = "";
+  isDeleting.value = true;
+  try {
+    await deleteBook(book.value.id);
+    await router.push("/books");
+  } catch (error) {
+    deleteError.value = error instanceof Error
+      ? error.message
+      : "目前無法刪除書籍，請稍後再試。";
+  } finally {
+    isDeleting.value = false;
+  }
+}
+
 const coverFile = ref<File | null>(null);
 const coverMessage = ref("");
 const coverError = ref("");
@@ -212,8 +238,20 @@ onMounted(loadBook);
         <h1>{{ book.title }}</h1>
         <p class="detail-author">{{ book.author || "未記錄作者" }}</p>
       </div>
-      <StatusBadge :status="book.status" />
+      <div class="detail-header-actions">
+        <StatusBadge :status="book.status" />
+        <div class="detail-actions desktop-only">
+          <button class="button button-secondary" type="button" @click="router.push(`/books/${book.id}/edit`)">
+            修改資料
+          </button>
+          <button class="button button-danger" type="button" :disabled="isDeleting" @click="deleteCurrentBook">
+            {{ isDeleting ? "刪除中⋯" : "刪除書籍" }}
+          </button>
+        </div>
+      </div>
     </div>
+
+    <p v-if="deleteError" class="feedback feedback-error" role="alert">{{ deleteError }}</p>
 
     <section class="detail-card cover-card">
       <BookCoverPicker

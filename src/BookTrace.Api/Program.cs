@@ -11,6 +11,7 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("BookTrace")
     ?? "Data Source=booktrace.db";
 builder.Services.AddDbContext<BookDbContext>(options => options.UseSqlite(connectionString));
+builder.Services.AddHostedService<RecycleBinCleanupService>();
 builder.Services.AddSingleton<TimeProvider>(_ =>
 {
     var configuredNow = Environment.GetEnvironmentVariable("BOOKTRACE_NOW_UTC");
@@ -33,8 +34,24 @@ using (var scope = app.Services.CreateScope())
         database.Database.EnsureDeleted();
     }
     database.Database.EnsureCreated();
-    EnsureCoverColumns(database);
+    EnsureBookColumns(database);
+    await RecycleBinMaintenance.PurgeExpiredDeletedBooksAsync(
+        database,
+        scope.ServiceProvider.GetRequiredService<TimeProvider>(),
+        CancellationToken.None);
 }
+
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api"))
+    {
+        var database = context.RequestServices.GetRequiredService<BookDbContext>();
+        var timeProvider = context.RequestServices.GetRequiredService<TimeProvider>();
+        await RecycleBinMaintenance.PurgeExpiredDeletedBooksAsync(database, timeProvider, context.RequestAborted);
+    }
+
+    await next(context);
+});
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -47,7 +64,9 @@ app.MapGet("/api/books", async (
     BookDbContext database,
     CancellationToken cancellationToken) =>
 {
-    var booksQuery = database.Books.AsNoTracking();
+    var booksQuery = database.Books
+        .AsNoTracking()
+        .Where(book => !book.IsDeleted);
     var normalizedSearch = search?.Trim().ToLowerInvariant();
 
     if (!string.IsNullOrEmpty(normalizedSearch))
@@ -76,7 +95,7 @@ app.MapGet("/api/books", async (
             HasAuthor = book.Author != null && book.Author != "",
             AuthorCount = book.Author == null
                 ? 0
-                : database.Books.Count(candidate => candidate.Author == book.Author),
+                : database.Books.Count(candidate => !candidate.IsDeleted && candidate.Author == book.Author),
         })
         .OrderByDescending(book => book.HasAuthor)
         .ThenByDescending(book => book.AuthorCount)
@@ -92,7 +111,9 @@ app.MapGet("/api/books/stats", async (
     BookDbContext database,
     CancellationToken cancellationToken) =>
 {
-    var books = database.Books.AsNoTracking();
+    var books = database.Books
+        .AsNoTracking()
+        .Where(book => !book.IsDeleted);
     var totalCount = await books.CountAsync(cancellationToken);
     var homeCount = await books.CountAsync(book => book.Status == BookStatus.Home, cancellationToken);
     var borrowedCount = await books.CountAsync(book => book.Status == BookStatus.Borrowed, cancellationToken);
@@ -115,7 +136,7 @@ app.MapGet("/api/books/{id:int}", async (
         .AsNoTracking()
         .Include(candidate => candidate.BorrowingRecords
             .Where(record => record.ReturnedAtUtc == null))
-        .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+        .SingleOrDefaultAsync(candidate => candidate.Id == id && !candidate.IsDeleted, cancellationToken);
 
     return book is null
         ? Results.NotFound(new { message = "找不到這本書。" })
@@ -129,7 +150,7 @@ app.MapGet("/api/books/{id:int}/borrowing-history", async (
 {
     var bookExists = await database.Books
         .AsNoTracking()
-        .AnyAsync(book => book.Id == id, cancellationToken);
+        .AnyAsync(book => book.Id == id && !book.IsDeleted, cancellationToken);
     if (!bookExists)
     {
         return Results.NotFound(new { message = "找不到這本書。" });
@@ -193,6 +214,7 @@ app.MapGet("/api/reminders", async (
         .AsNoTracking()
         .Include(record => record.Book)
         .Where(record => record.ReturnedAtUtc == null
+            && !record.Book.IsDeleted
             && record.DueDateUtc != null
             && record.DueDateUtc < tomorrow)
         .OrderBy(record => record.DueDateUtc)
@@ -258,6 +280,147 @@ app.MapPost("/api/books", async (
     return Results.Created($"/api/books/{book.Id}", BookResponse.From(book));
 });
 
+app.MapPut("/api/books/{id:int}", async (
+    int id,
+    UpdateBookRequest request,
+    BookDbContext database,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Title))
+    {
+        return Results.BadRequest(new
+        {
+            message = "請輸入書名，才能保存這本書。",
+            errors = new { title = "書名是必填欄位。" },
+        });
+    }
+
+    var book = await database.Books
+        .Include(candidate => candidate.BorrowingRecords)
+        .SingleOrDefaultAsync(candidate => candidate.Id == id && !candidate.IsDeleted, cancellationToken);
+    if (book is null)
+    {
+        return Results.NotFound(new { message = "找不到這本書。" });
+    }
+
+    book.Title = request.Title.Trim();
+    book.Author = TrimToNull(request.Author);
+    book.Isbn = TrimToNull(request.Isbn);
+    book.Publisher = TrimToNull(request.Publisher);
+    book.Category = TrimToNull(request.Category);
+    book.Location = TrimToNull(request.Location);
+    book.DetailedLocation = TrimToNull(request.DetailedLocation);
+    book.Notes = TrimToNull(request.Notes);
+    book.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+
+    await database.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(BookResponse.From(
+        book,
+        book.BorrowingRecords.SingleOrDefault(record => record.ReturnedAtUtc == null)));
+});
+
+app.MapDelete("/api/books/{id:int}", async (
+    int id,
+    BookDbContext database,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken) =>
+{
+    var book = await database.Books
+        .Include(candidate => candidate.BorrowingRecords)
+        .SingleOrDefaultAsync(candidate => candidate.Id == id && !candidate.IsDeleted, cancellationToken);
+    if (book is null)
+    {
+        return Results.NotFound(new { message = "找不到這本書。" });
+    }
+
+    var deletedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+    book.IsDeleted = true;
+    book.DeletedAtUtc = deletedAtUtc;
+    book.UpdatedAtUtc = deletedAtUtc;
+    await database.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(RecycleBinBookResponse.From(
+        book,
+        book.BorrowingRecords.SingleOrDefault(record => record.ReturnedAtUtc == null)));
+});
+
+app.MapGet("/api/recycle-bin", async (
+    BookDbContext database,
+    CancellationToken cancellationToken) =>
+{
+    var books = await database.Books
+        .AsNoTracking()
+        .Include(book => book.BorrowingRecords)
+        .Where(book => book.IsDeleted)
+        .OrderByDescending(book => book.DeletedAtUtc)
+        .ThenByDescending(book => book.Id)
+        .ToListAsync(cancellationToken);
+
+    return Results.Ok(books.Select(book => RecycleBinBookResponse.From(
+        book,
+        book.BorrowingRecords.SingleOrDefault(record => record.ReturnedAtUtc == null))));
+});
+
+app.MapPost("/api/recycle-bin/{id:int}/restore", async (
+    int id,
+    BookDbContext database,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken) =>
+{
+    var book = await database.Books
+        .Include(candidate => candidate.BorrowingRecords)
+        .SingleOrDefaultAsync(candidate => candidate.Id == id && candidate.IsDeleted, cancellationToken);
+    if (book is null || book.DeletedAtUtc is null)
+    {
+        return Results.NotFound(new { message = "回收筒裡找不到這本書，或它已經永久移除。" });
+    }
+
+    var now = timeProvider.GetUtcNow().UtcDateTime;
+    if (book.DeletedAtUtc.Value <= now.AddDays(-30))
+    {
+        await database.BorrowingRecords
+            .Where(record => record.BookId == book.Id)
+            .ExecuteDeleteAsync(cancellationToken);
+        database.Books.Remove(book);
+        await database.SaveChangesAsync(cancellationToken);
+        return Results.NotFound(new { message = "這本書已超過 30 天，無法還原。" });
+    }
+
+    book.IsDeleted = false;
+    book.DeletedAtUtc = null;
+    book.UpdatedAtUtc = now;
+    await database.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(BookResponse.From(
+        book,
+        book.BorrowingRecords.SingleOrDefault(record => record.ReturnedAtUtc == null)));
+});
+
+if (app.Environment.IsEnvironment("Playwright"))
+{
+    app.MapPost("/api/test/recycle-bin/{id:int}/age", async (
+        int id,
+        AgeRecycleBinRequest request,
+        BookDbContext database,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken) =>
+    {
+        var book = await database.Books
+            .SingleOrDefaultAsync(candidate => candidate.Id == id && candidate.IsDeleted, cancellationToken);
+        if (book is null)
+        {
+            return Results.NotFound(new { message = "找不到這本回收中的書籍。" });
+        }
+
+        var daysAgo = Math.Max(30, request.DaysAgo);
+        book.DeletedAtUtc = timeProvider.GetUtcNow().UtcDateTime.AddDays(-daysAgo);
+        await database.SaveChangesAsync(cancellationToken);
+        return Results.NoContent();
+    });
+}
+
 app.MapPost("/api/books/{id:int}/borrow", async (
     int id,
     BorrowBookRequest request,
@@ -267,7 +430,7 @@ app.MapPost("/api/books/{id:int}/borrow", async (
 {
     var book = await database.Books
         .Include(candidate => candidate.BorrowingRecords)
-        .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+        .SingleOrDefaultAsync(candidate => candidate.Id == id && !candidate.IsDeleted, cancellationToken);
 
     if (book is null)
     {
@@ -320,7 +483,7 @@ app.MapPost("/api/books/{id:int}/return", async (
 {
     var book = await database.Books
         .Include(candidate => candidate.BorrowingRecords)
-        .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+        .SingleOrDefaultAsync(candidate => candidate.Id == id && !candidate.IsDeleted, cancellationToken);
     if (book is null)
     {
         return Results.NotFound(new { message = "找不到這本書。" });
@@ -370,7 +533,7 @@ app.MapPost("/api/books/{id:int}/cover", async (
     }
 
     var book = await database.Books
-        .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+        .SingleOrDefaultAsync(candidate => candidate.Id == id && !candidate.IsDeleted, cancellationToken);
     if (book is null)
     {
         return Results.NotFound(new { message = "找不到這本書。" });
@@ -392,7 +555,7 @@ app.MapDelete("/api/books/{id:int}/cover", async (
     CancellationToken cancellationToken) =>
 {
     var book = await database.Books
-        .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+        .SingleOrDefaultAsync(candidate => candidate.Id == id && !candidate.IsDeleted, cancellationToken);
     if (book is null)
     {
         return Results.NotFound(new { message = "找不到這本書。" });
@@ -419,7 +582,7 @@ app.Run();
 static string? TrimToNull(string? value) =>
     string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-static void EnsureCoverColumns(BookDbContext database)
+static void EnsureBookColumns(BookDbContext database)
 {
     var connection = database.Database.GetDbConnection();
     var shouldClose = connection.State != ConnectionState.Open;
@@ -443,9 +606,11 @@ static void EnsureCoverColumns(BookDbContext database)
 
         var missingColumns = new (string Name, string SqlType)[]
         {
-            ("CoverImageData", "BLOB"),
-            ("CoverContentType", "TEXT"),
-            ("CoverFileName", "TEXT"),
+            ("CoverImageData", "BLOB NULL"),
+            ("CoverContentType", "TEXT NULL"),
+            ("CoverFileName", "TEXT NULL"),
+            ("IsDeleted", "INTEGER NOT NULL DEFAULT 0"),
+            ("DeletedAtUtc", "TEXT NULL"),
         };
 
         foreach (var (name, sqlType) in missingColumns)
@@ -456,7 +621,7 @@ static void EnsureCoverColumns(BookDbContext database)
             }
 
             using var alterCommand = connection.CreateCommand();
-            alterCommand.CommandText = $"ALTER TABLE Books ADD COLUMN {name} {sqlType} NULL;";
+            alterCommand.CommandText = $"ALTER TABLE Books ADD COLUMN {name} {sqlType};";
             alterCommand.ExecuteNonQuery();
         }
     }
@@ -520,6 +685,43 @@ sealed record CoverUploadResult(byte[]? Content, string? ContentType, string? Er
     public static CoverUploadResult Invalid(string error) => new(null, null, error);
 }
 
+sealed record AgeRecycleBinRequest(int DaysAgo);
+
+sealed class RecycleBinCleanupService(
+    IServiceScopeFactory scopeFactory,
+    TimeProvider timeProvider,
+    ILogger<RecycleBinCleanupService> logger) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromHours(1));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stoppingToken))
+            {
+                await CleanupAsync(stoppingToken);
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task CleanupAsync(CancellationToken cancellationToken)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<BookDbContext>();
+        try
+        {
+            await RecycleBinMaintenance.PurgeExpiredDeletedBooksAsync(database, timeProvider, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogError(exception, "無法清理超過 30 天的回收筒書籍。");
+        }
+    }
+}
+
 sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
 {
     private long callCount;
@@ -528,3 +730,33 @@ sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
 }
 
 public partial class Program;
+
+static class RecycleBinMaintenance
+{
+    public static async Task PurgeExpiredDeletedBooksAsync(
+        BookDbContext database,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken)
+    {
+        var expirationCutoff = timeProvider.GetUtcNow().UtcDateTime.AddDays(-30);
+        var expiredBooks = await database.Books
+            .Include(book => book.BorrowingRecords)
+            .Where(book => book.IsDeleted
+                && book.DeletedAtUtc != null
+                && book.DeletedAtUtc <= expirationCutoff)
+            .ToListAsync(cancellationToken);
+
+        if (expiredBooks.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var book in expiredBooks)
+        {
+            database.BorrowingRecords.RemoveRange(book.BorrowingRecords);
+            database.Books.Remove(book);
+        }
+
+        await database.SaveChangesAsync(cancellationToken);
+    }
+}

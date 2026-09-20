@@ -12,6 +12,16 @@ public sealed record CreateBookRequest(
     string? DetailedLocation,
     string? Notes);
 
+public sealed record UpdateBookRequest(
+    string? Title,
+    string? Author,
+    string? Isbn,
+    string? Publisher,
+    string? Category,
+    string? Location,
+    string? DetailedLocation,
+    string? Notes);
+
 public sealed record BorrowBookRequest(
     string? BorrowerName,
     DateOnly? DueDate,
@@ -130,3 +140,28 @@ public sealed record LibraryStatsResponse(
     int HomeCount,
     int BorrowedCount,
     IReadOnlyList<BookResponse> RecentBooks);
+
+public sealed record RecycleBinBookResponse(
+    int Id,
+    string Title,
+    string? Author,
+    string? CoverUrl,
+    string Status,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc,
+    DateTime DeletedAtUtc,
+    DateTime ExpiresAtUtc,
+    BorrowingRecordResponse? CurrentBorrowing)
+{
+    public static RecycleBinBookResponse From(Book book, BorrowingRecord? currentBorrowing = null) => new(
+        book.Id,
+        book.Title,
+        book.Author,
+        book.CoverImageData is null ? null : $"/api/books/{book.Id}/cover?v={book.UpdatedAtUtc.Ticks}",
+        book.Status == BookStatus.Home ? "HOME" : "BORROWED",
+        book.CreatedAtUtc,
+        book.UpdatedAtUtc,
+        book.DeletedAtUtc!.Value,
+        book.DeletedAtUtc.Value.AddDays(30),
+        currentBorrowing is null ? null : BorrowingRecordResponse.From(currentBorrowing));
+}
