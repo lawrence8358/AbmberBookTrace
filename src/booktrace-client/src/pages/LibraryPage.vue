@@ -187,6 +187,10 @@ onMounted(() => {
     </div>
     <div class="book-grid" aria-label="書籍列表">
       <article v-for="book in books" :key="book.id" class="book-card">
+        <div class="book-card-cover">
+          <img v-if="book.coverUrl" :src="book.coverUrl" :alt="`${book.title} 的封面`" />
+          <span v-else aria-hidden="true">封面</span>
+        </div>
         <div class="book-card-main">
           <p class="book-card-label">BOOK {{ String(book.id).padStart(2, "0") }}</p>
           <h3><RouterLink :to="`/books/${book.id}`">{{ book.title }}</RouterLink></h3>

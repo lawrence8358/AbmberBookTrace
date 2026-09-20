@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { reactive, ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
-import { createBook } from "../api";
+import { createBook, uploadBookCover } from "../api";
+import BookCoverPicker from "../components/BookCoverPicker.vue";
 
 const router = useRouter();
 const isSaving = ref(false);
+const coverFile = ref<File | null>(null);
 const titleError = ref("");
 const formError = ref("");
 const form = reactive({
@@ -30,6 +32,9 @@ async function saveBook() {
   isSaving.value = true;
   try {
     const book = await createBook(form);
+    if (coverFile.value) {
+      await uploadBookCover(book.id, coverFile.value);
+    }
     await router.push(`/books/${book.id}`);
   } catch (error) {
     formError.value = error instanceof Error
@@ -79,6 +84,11 @@ async function saveBook() {
             <input v-model="form.category" type="text" />
           </label>
         </div>
+      </div>
+
+      <div class="form-section">
+        <h2>封面</h2>
+        <BookCoverPicker v-model="coverFile" input-id-prefix="new-book-cover" />
       </div>
 
       <div class="form-section">

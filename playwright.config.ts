@@ -1,10 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const e2ePort = process.env.E2E_PORT ?? "5080";
+const e2ePort = process.env.E2E_PORT ?? process.env.PLAYWRIGHT_PORT ?? "5080";
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  fullyParallel: true,
+  fullyParallel: false,
+  workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   reporter: "list",
@@ -22,13 +23,23 @@ export default defineConfig({
     env: {
       ASPNETCORE_ENVIRONMENT: "Playwright",
     },
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
   projects: [
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "mobile",
+      testMatch: "**/book-cover.spec.ts",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 390, height: 844 },
+        hasTouch: true,
+        isMobile: false,
+      },
     },
   ],
 });

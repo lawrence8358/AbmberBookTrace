@@ -2,6 +2,9 @@ using BookTrace.Api.Contracts;
 using BookTrace.Api.Data;
 using BookTrace.Api.Models;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
+
+const long MaxCoverSizeBytes = 5 * 1024 * 1024;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,6 +22,7 @@ using (var scope = app.Services.CreateScope())
         database.Database.EnsureDeleted();
     }
     database.Database.EnsureCreated();
+    EnsureCoverColumns(database);
 }
 
 app.UseDefaultFiles();
@@ -105,6 +109,22 @@ app.MapGet("/api/books/{id:int}", async (
     return book is null
         ? Results.NotFound(new { message = "找不到這本書。" })
         : Results.Ok(BookResponse.From(book, book.BorrowingRecords.SingleOrDefault()));
+});
+
+app.MapGet("/api/books/{id:int}/cover", async (
+    int id,
+    BookDbContext database,
+    CancellationToken cancellationToken) =>
+{
+    var cover = await database.Books
+        .AsNoTracking()
+        .Where(book => book.Id == id)
+        .Select(book => new { book.CoverImageData, book.CoverContentType })
+        .SingleOrDefaultAsync(cancellationToken);
+
+    return cover?.CoverImageData is null || cover.CoverContentType is null
+        ? Results.NotFound()
+        : Results.File(cover.CoverImageData, cover.CoverContentType);
 });
 
 app.MapPost("/api/books", async (
@@ -204,7 +224,6 @@ app.MapPost("/api/books/{id:int}/return", async (
     var book = await database.Books
         .Include(candidate => candidate.BorrowingRecords)
         .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
-
     if (book is null)
     {
         return Results.NotFound(new { message = "找不到這本書。" });
@@ -227,11 +246,179 @@ app.MapPost("/api/books/{id:int}/return", async (
     return Results.Ok(BookResponse.From(book));
 });
 
+app.MapPost("/api/books/{id:int}/cover", async (
+    int id,
+    IFormFile? cover,
+    BookDbContext database,
+    CancellationToken cancellationToken) =>
+{
+    if (cover is null)
+    {
+        return Results.BadRequest(new
+        {
+            message = "請選擇一張封面圖片。",
+            errors = new { cover = "請選擇一張封面圖片。" },
+        });
+    }
+
+    var upload = await ReadCoverAsync(cover, cancellationToken);
+    if (upload.Error is not null)
+    {
+        return Results.BadRequest(new
+        {
+            message = upload.Error,
+            errors = new { cover = upload.Error },
+        });
+    }
+
+    var book = await database.Books
+        .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+    if (book is null)
+    {
+        return Results.NotFound(new { message = "找不到這本書。" });
+    }
+
+    book.CoverImageData = upload.Content;
+    book.CoverContentType = upload.ContentType;
+    book.CoverFileName = Path.GetFileName(cover.FileName);
+    book.UpdatedAtUtc = DateTime.UtcNow;
+    await database.SaveChangesAsync(cancellationToken);
+
+    return Results.Ok(BookResponse.From(book));
+}).DisableAntiforgery();
+
+app.MapDelete("/api/books/{id:int}/cover", async (
+    int id,
+    BookDbContext database,
+    CancellationToken cancellationToken) =>
+{
+    var book = await database.Books
+        .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+    if (book is null)
+    {
+        return Results.NotFound(new { message = "找不到這本書。" });
+    }
+
+    if (book.CoverImageData is null)
+    {
+        return Results.NotFound(new { message = "這本書目前沒有封面。" });
+    }
+
+    book.CoverImageData = null;
+    book.CoverContentType = null;
+    book.CoverFileName = null;
+    book.UpdatedAtUtc = DateTime.UtcNow;
+    await database.SaveChangesAsync(cancellationToken);
+
+    return Results.NoContent();
+});
+
 app.MapFallbackToFile("index.html");
 
 app.Run();
 
 static string? TrimToNull(string? value) =>
     string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+static void EnsureCoverColumns(BookDbContext database)
+{
+    var connection = database.Database.GetDbConnection();
+    var shouldClose = connection.State != ConnectionState.Open;
+    if (shouldClose)
+    {
+        connection.Open();
+    }
+
+    try
+    {
+        using var columnsCommand = connection.CreateCommand();
+        columnsCommand.CommandText = "PRAGMA table_info(Books);";
+        var existingColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (var reader = columnsCommand.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                existingColumns.Add(reader.GetString(1));
+            }
+        }
+
+        var missingColumns = new (string Name, string SqlType)[]
+        {
+            ("CoverImageData", "BLOB"),
+            ("CoverContentType", "TEXT"),
+            ("CoverFileName", "TEXT"),
+        };
+
+        foreach (var (name, sqlType) in missingColumns)
+        {
+            if (existingColumns.Contains(name))
+            {
+                continue;
+            }
+
+            using var alterCommand = connection.CreateCommand();
+            alterCommand.CommandText = $"ALTER TABLE Books ADD COLUMN {name} {sqlType} NULL;";
+            alterCommand.ExecuteNonQuery();
+        }
+    }
+    finally
+    {
+        if (shouldClose)
+        {
+            connection.Close();
+        }
+    }
+}
+
+static async Task<CoverUploadResult> ReadCoverAsync(
+    IFormFile cover,
+    CancellationToken cancellationToken)
+{
+    if (cover.Length <= 0)
+    {
+        return CoverUploadResult.Invalid("封面圖片不可為空白檔案。");
+    }
+
+    if (cover.Length > MaxCoverSizeBytes)
+    {
+        return CoverUploadResult.Invalid("封面圖片不可超過 5 MB。");
+    }
+
+    var contentType = cover.ContentType.Trim().ToLowerInvariant();
+    if (!IsSupportedCoverType(contentType))
+    {
+        return CoverUploadResult.Invalid("封面只接受 JPG、PNG、GIF 或 WebP 圖片。");
+    }
+
+    await using var buffer = new MemoryStream();
+    await cover.CopyToAsync(buffer, cancellationToken);
+    var content = buffer.ToArray();
+
+    if (!MatchesImageSignature(content, contentType))
+    {
+        return CoverUploadResult.Invalid("封面圖片內容無法辨識，請重新選擇 JPG、PNG、GIF 或 WebP 圖片。");
+    }
+
+    return new CoverUploadResult(content, contentType, null);
+}
+
+static bool MatchesImageSignature(byte[] content, string contentType) => contentType switch
+{
+    "image/jpeg" => content.Length >= 3 && content[0] == 0xFF && content[1] == 0xD8 && content[2] == 0xFF,
+    "image/png" => content.AsSpan().StartsWith(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }),
+    "image/gif" => content.AsSpan().StartsWith("GIF87a"u8) || content.AsSpan().StartsWith("GIF89a"u8),
+    "image/webp" => content.Length >= 12
+        && content.AsSpan(0, 4).SequenceEqual("RIFF"u8)
+        && content.AsSpan(8, 4).SequenceEqual("WEBP"u8),
+    _ => false,
+};
+
+static bool IsSupportedCoverType(string contentType) => contentType is
+    "image/jpeg" or "image/png" or "image/gif" or "image/webp";
+
+sealed record CoverUploadResult(byte[]? Content, string? ContentType, string? Error)
+{
+    public static CoverUploadResult Invalid(string error) => new(null, null, error);
+}
 
 public partial class Program;

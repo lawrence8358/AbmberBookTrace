@@ -17,6 +17,9 @@ public sealed class Book
     public string? Location { get; set; }
     public string? DetailedLocation { get; set; }
     public string? Notes { get; set; }
+    public byte[]? CoverImageData { get; set; }
+    public string? CoverContentType { get; set; }
+    public string? CoverFileName { get; set; }
     public BookStatus Status { get; set; } = BookStatus.Home;
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }

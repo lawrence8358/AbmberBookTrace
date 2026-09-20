@@ -20,6 +20,8 @@ public sealed class BookDbContext(DbContextOptions<BookDbContext> options) : DbC
             entity.Property(book => book.Location).HasMaxLength(200);
             entity.Property(book => book.DetailedLocation).HasMaxLength(200);
             entity.Property(book => book.Notes).HasMaxLength(2000);
+            entity.Property(book => book.CoverContentType).HasMaxLength(100);
+            entity.Property(book => book.CoverFileName).HasMaxLength(255);
             entity.Property(book => book.Status).HasConversion<string>().HasMaxLength(20);
             entity.HasMany(book => book.BorrowingRecords)
                 .WithOne(record => record.Book)

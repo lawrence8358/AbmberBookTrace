@@ -11,6 +11,7 @@ export interface Book {
   location: string | null;
   detailedLocation: string | null;
   notes: string | null;
+  coverUrl: string | null;
   status: BookStatus;
   createdAtUtc: string;
   updatedAtUtc: string;
@@ -57,14 +58,19 @@ interface ApiErrorBody {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const isMultipart = options?.body instanceof FormData;
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
+    ...(isMultipart ? {} : { headers: { "Content-Type": "application/json" } }),
     ...options,
   });
 
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
     throw new Error(body.message ?? "目前無法完成操作，請稍後再試。");
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
   }
 
   return response.json() as Promise<T>;
@@ -114,4 +120,18 @@ export function returnBook(id: number): Promise<Book> {
   return request<Book>(`/api/books/${id}/return`, {
     method: "POST",
   });
+}
+
+export function uploadBookCover(id: number, file: File): Promise<Book> {
+  const formData = new FormData();
+  formData.append("cover", file);
+
+  return request<Book>(`/api/books/${id}/cover`, {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export function removeBookCover(id: number): Promise<void> {
+  return request<void>(`/api/books/${id}/cover`, { method: "DELETE" });
 }

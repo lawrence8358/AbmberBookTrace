@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { RouterLink, useRoute } from "vue-router";
-import { borrowBook, getBook, returnBook, type Book } from "../api";
+import {
+  borrowBook,
+  getBook,
+  removeBookCover,
+  returnBook,
+  type Book,
+  uploadBookCover,
+} from "../api";
+import BookCoverPicker from "../components/BookCoverPicker.vue";
 import StatusBadge from "../components/StatusBadge.vue";
 
 const route = useRoute();
@@ -104,8 +112,12 @@ async function markAsReturned() {
     isReturning.value = false;
   }
 }
+const coverFile = ref<File | null>(null);
+const coverMessage = ref("");
+const coverError = ref("");
+const isCoverSaving = ref(false);
 
-onMounted(async () => {
+async function loadBook() {
   try {
     book.value = await getBook(String(route.params.id));
   } catch (error) {
@@ -115,7 +127,51 @@ onMounted(async () => {
   } finally {
     isLoading.value = false;
   }
-});
+}
+
+async function replaceCover(file: File | null) {
+  coverMessage.value = "";
+  coverError.value = "";
+  if (!file || !book.value) {
+    return;
+  }
+
+  isCoverSaving.value = true;
+  try {
+    book.value = await uploadBookCover(book.value.id, file);
+    coverFile.value = null;
+    coverMessage.value = "封面已更新。";
+  } catch (error) {
+    coverError.value = error instanceof Error
+      ? error.message
+      : "目前無法更新封面，請稍後再試。";
+  } finally {
+    isCoverSaving.value = false;
+  }
+}
+
+async function removeCover() {
+  if (!book.value?.coverUrl) {
+    return;
+  }
+
+  coverMessage.value = "";
+  coverError.value = "";
+  isCoverSaving.value = true;
+  try {
+    await removeBookCover(book.value.id);
+    book.value = { ...book.value, coverUrl: null };
+    coverMessage.value = "封面已移除。";
+  } catch (error) {
+    coverError.value = error instanceof Error
+      ? error.message
+      : "目前無法移除封面，請稍後再試。";
+  } finally {
+    isCoverSaving.value = false;
+  }
+}
+
+onMounted(loadBook);
 </script>
 
 <template>
@@ -132,6 +188,19 @@ onMounted(async () => {
       </div>
       <StatusBadge :status="book.status" />
     </div>
+
+    <section class="detail-card cover-card">
+      <BookCoverPicker
+        v-model="coverFile"
+        input-id-prefix="detail-book-cover"
+        :current-cover-url="book.coverUrl"
+        @update:model-value="replaceCover"
+        @remove="removeCover"
+      />
+      <p v-if="isCoverSaving" class="cover-status" role="status">封面處理中⋯</p>
+      <p v-if="coverMessage" class="feedback feedback-success" role="status">{{ coverMessage }}</p>
+      <p v-if="coverError" class="feedback feedback-error" role="alert">{{ coverError }}</p>
+    </section>
 
     <div class="detail-grid">
       <section class="detail-card location-card">
