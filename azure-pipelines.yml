@@ -12,7 +12,7 @@ pr:
       - main
 
 pool:
-  vmImage: ubuntu-latest
+  vmImage: ubuntu-24.04
 
 variables:
   nodeVersion: "22.x"
@@ -25,10 +25,10 @@ steps:
   - checkout: self
     clean: true
 
-  - task: NodeTool@0
+  - task: UseNode@1
     displayName: Set up Node.js
     inputs:
-      versionSpec: "$(nodeVersion)"
+      version: "$(nodeVersion)"
 
   - bash: npm install --global "pnpm@$(pnpmVersion)"
     displayName: Set up pnpm
@@ -66,5 +66,5 @@ steps:
     displayName: Upload downloadable build
     inputs:
       PathtoPublish: "$(artifactDirectory)"
-      ArtifactName: "booktrace-site-$(Build.SourceVersion)"
+      ArtifactName: "booktrace-site"
       publishLocation: Container
