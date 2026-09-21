@@ -1,0 +1,70 @@
+trigger:
+  branches:
+    include:
+      - main
+
+# GitHub repositories use this trigger for pull requests. Azure Repos Git
+# repositories should configure the same pipeline as a build-validation branch
+# policy because their PR validation is controlled by branch policies.
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  nodeVersion: "22.x"
+  pnpmVersion: "10"
+  dotnetVersion: "10.x"
+  buildConfiguration: "Release"
+  artifactDirectory: "$(Build.ArtifactStagingDirectory)/booktrace-site"
+
+steps:
+  - checkout: self
+    clean: true
+
+  - task: NodeTool@0
+    displayName: Set up Node.js
+    inputs:
+      versionSpec: "$(nodeVersion)"
+
+  - bash: npm install --global "pnpm@$(pnpmVersion)"
+    displayName: Set up pnpm
+
+  - task: UseDotNet@2
+    displayName: Set up .NET
+    inputs:
+      packageType: sdk
+      version: "$(dotnetVersion)"
+
+  - bash: pnpm install --frozen-lockfile
+    displayName: Install root Node.js dependencies
+
+  - bash: pnpm install --frozen-lockfile
+    displayName: Install frontend dependencies
+    workingDirectory: src/booktrace-client
+
+  - bash: pnpm build
+    displayName: Build frontend
+
+  - bash: dotnet restore src/BookTrace.Api/BookTrace.Api.csproj
+    displayName: Restore API dependencies
+
+  - bash: >-
+      dotnet publish src/BookTrace.Api/BookTrace.Api.csproj
+      --configuration $(buildConfiguration)
+      --no-restore
+      --output "$(artifactDirectory)"
+    displayName: Publish single-site package
+
+  - bash: test -f "$(artifactDirectory)/wwwroot/index.html"
+    displayName: Verify frontend is included in the site package
+
+  - task: PublishBuildArtifacts@1
+    displayName: Upload downloadable build
+    inputs:
+      PathtoPublish: "$(artifactDirectory)"
+      ArtifactName: "booktrace-site-$(Build.SourceVersion)"
+      publishLocation: Container
