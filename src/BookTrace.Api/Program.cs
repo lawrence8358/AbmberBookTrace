@@ -2,7 +2,6 @@ using BookTrace.Api.Contracts;
 using BookTrace.Api.Data;
 using BookTrace.Api.Models;
 using Microsoft.EntityFrameworkCore;
-using System.Data;
 
 const long MaxCoverSizeBytes = 5 * 1024 * 1024;
 
@@ -31,11 +30,9 @@ using (var scope = app.Services.CreateScope())
     var database = scope.ServiceProvider.GetRequiredService<BookDbContext>();
     if (app.Environment.IsEnvironment("Playwright"))
     {
-        database.Database.EnsureDeleted();
+        await database.Database.EnsureDeletedAsync();
     }
-    database.Database.EnsureCreated();
-    EnsureBookColumns(database);
-    SqliteSchemaUpgrade.EnsureBorrowingRecordSchema(database);
+    await database.Database.MigrateAsync();
     await RecycleBinMaintenance.PurgeExpiredDeletedBooksAsync(
         database,
         scope.ServiceProvider.GetRequiredService<TimeProvider>(),
@@ -595,58 +592,6 @@ static void ApplyBookFields(
     book.Location = TrimToNull(location);
     book.DetailedLocation = TrimToNull(detailedLocation);
     book.Notes = TrimToNull(notes);
-}
-
-static void EnsureBookColumns(BookDbContext database)
-{
-    var connection = database.Database.GetDbConnection();
-    var shouldClose = connection.State != ConnectionState.Open;
-    if (shouldClose)
-    {
-        connection.Open();
-    }
-
-    try
-    {
-        using var columnsCommand = connection.CreateCommand();
-        columnsCommand.CommandText = "PRAGMA table_info(Books);";
-        var existingColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        using (var reader = columnsCommand.ExecuteReader())
-        {
-            while (reader.Read())
-            {
-                existingColumns.Add(reader.GetString(1));
-            }
-        }
-
-        var missingColumns = new (string Name, string SqlType)[]
-        {
-            ("CoverImageData", "BLOB NULL"),
-            ("CoverContentType", "TEXT NULL"),
-            ("CoverFileName", "TEXT NULL"),
-            ("IsDeleted", "INTEGER NOT NULL DEFAULT 0"),
-            ("DeletedAtUtc", "TEXT NULL"),
-        };
-
-        foreach (var (name, sqlType) in missingColumns)
-        {
-            if (existingColumns.Contains(name))
-            {
-                continue;
-            }
-
-            using var alterCommand = connection.CreateCommand();
-            alterCommand.CommandText = $"ALTER TABLE Books ADD COLUMN {name} {sqlType};";
-            alterCommand.ExecuteNonQuery();
-        }
-    }
-    finally
-    {
-        if (shouldClose)
-        {
-            connection.Close();
-        }
-    }
 }
 
 static async Task<CoverUploadResult> ReadCoverAsync(
