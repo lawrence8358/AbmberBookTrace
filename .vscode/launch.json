@@ -1,0 +1,27 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "1. 開啟 API",
+      "type": "dotnet",
+      "request": "launch",
+      "projectPath": "${workspaceFolder}/src/BookTrace.Api/BookTrace.Api.csproj"
+    },
+    {
+      "name": "2. 開啟前端",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "preLaunchTask": "frontend: dev server",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/src/booktrace-client",
+      "sourceMaps": true
+    }
+  ],
+  "compounds": [
+    {
+      "name": "3. 同時開啟前後端",
+      "configurations": ["1. 開啟 API", "2. 開啟前端"],
+      "stopAll": true
+    }
+  ]
+}
