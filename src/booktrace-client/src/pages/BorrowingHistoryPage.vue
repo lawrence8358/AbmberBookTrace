@@ -113,7 +113,7 @@ onMounted(() => {
             </div>
             <div>
               <p class="book-card-label">借閱紀錄 #{{ record.id }}</p>
-              <h3><RouterLink :to="`/books/${record.bookId}`">{{ record.bookTitle }}</RouterLink></h3>
+              <h3 :title="record.bookTitle"><RouterLink :to="`/books/${record.bookId}`">{{ record.bookTitle }}</RouterLink></h3>
               <p class="book-author">{{ record.bookAuthor || "未記錄作者" }}</p>
             </div>
           </div>

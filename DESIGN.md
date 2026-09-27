@@ -22,19 +22,19 @@ colors:
   danger-bg: "#FDEAEA"
 typography:
   display:
-    fontFamily: "'Noto Serif TC', 'Songti TC', serif"
+    fontFamily: ""Noto Sans TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", sans-serif"
     fontWeight: 600
-    lineHeight: 1.3
+    lineHeight: 1.35
   heading:
-    fontFamily: "'Noto Serif TC', 'Songti TC', serif"
+    fontFamily: ""Noto Sans TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", sans-serif"
     fontWeight: 600
-    lineHeight: 1.4
+    lineHeight: 1.45
   body:
-    fontFamily: "'Noto Sans TC', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    fontFamily: ""Noto Sans TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", sans-serif"
     fontWeight: 400
     lineHeight: 1.6
   caption:
-    fontFamily: "'Noto Sans TC', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    fontFamily: ""Noto Sans TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", sans-serif"
     fontWeight: 400
     lineHeight: 1.4
 rounded:
@@ -133,24 +133,34 @@ components:
 
 ## Typography
 
-字體排印遵循「標題具備手帳人文氣質，介面文字具備極高可讀性」的雙軸原則：
+字體排印遵循「**全站只用一種中文字體**，層次完全交給字級與字重」的原則，避免同一頁出現兩種中文字型造成的視覺雜訊。
 
-### 字族設定 (Font Families)
+### 字族設定 (Font Family)
 
-- **標題與品牌 (Display / Headings)**:
-  `'Noto Serif TC', 'Songti TC', 'Baskerville', serif`
-  用於 Logo「書蹤」、頁面大標題與卡片中的書名，散發淡淡的書卷與鉛字印刷感。
-- **介面與內文 (Body / UI)**:
-  `'Noto Sans TC', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`
-  用於搜尋框文字、按鈕、作者資訊、書籍位置說明與表單標籤，確保繁體中文在各種螢幕尺寸下的極佳辨識度。
+全站唯一字族：
+
+```
+"Noto Sans TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", sans-serif
+```
+
+- 標題、書名、內文、按鈕、表單、狀態標籤——**全部**使用這一組，不另外搭配襯線體。
+- `Noto Sans TC` 由 `index.html` 以 Google Fonts 載入（400/500/600/700，`display=swap`）；`Microsoft JhengHei`（微軟正黑體）為 Windows 的第一順位備援，其後才是 macOS／iOS 的系統字型，確保沒有網路時各平台也不會各挑各的中文字體。
+
+### 字體設定方式 (Implementation)
+
+- **全站只有一處 `font-family` 宣告**，就在 `style.css` 的 `:root`；其餘所有元素一律靠繼承。
+- 任何頁面、元件、卡片都**不得**再寫 `font-family`（包含 `h1`~`h6`、書名、統計數字）。要做出層次請改 `font-size` 與 `font-weight`。
+- `button`、`input`、`textarea` 以 `font: inherit` 接上同一套字體，表單不會掉回瀏覽器預設字型。
 
 ### 字級階層 (Type Scale)
 
-- **Page Title**: `28px ~ 32px` (Bold / 600, Serif)
-- **Section Heading**: `20px ~ 24px` (SemiBold / 600, Serif)
-- **Book Title (Card)**: `16px ~ 18px` (Medium / 500, Serif)
-- **Body & Controls**: `14px ~ 16px` (Regular / 400, Sans)
-- **Metadata & Badges**: `12px ~ 13px` (Medium / 500, Sans)
+字族一致，層次靠字級與字重區分：
+
+- **Page Title**: `28px ~ 36px` / 600
+- **Section Heading**: `20px ~ 24px` / 600
+- **Book Title (Card)**: `16px ~ 19px` / 600
+- **Body & Controls**: `14px ~ 16px` / 400
+- **Metadata & Badges**: `12px ~ 13px` / 400 ~ 600
 
 ---
 
@@ -177,6 +187,15 @@ components:
   - **單欄書籍列表**：每本書以橫向卡片呈現（左側封面/佔位圖，右側書名、作者、位置與狀態 Badge）。
   - **底部固定導覽列（Bottom Navigation Bar）**：
     - 首頁 / 搜尋 / 新增（中央突起高亮）/ 書庫 / 設定。
+
+### 防止內容撐爆版面 (Overflow Rules)
+
+過長的書名是最常見的破版來源，以下規則全站適用：
+
+- 所有 Grid 容器的軌道一律寫 `minmax(0, 1fr)`，不要只寫 `1fr` 或省略 `grid-template-columns`；預設的 `auto` 軌道會被 max-content 撐開，整張卡片就會超出版面。
+- 巢狀 Flex 容器每一層都要 `min-width: 0`，截斷才會生效。
+- 直向排列（手機版 `flex-direction: column`）要用 `align-items: stretch`；用 `flex-start` 會讓子項目以 max-content 寬度計算而撐破卡片。
+- 按鈕與狀態標籤加 `white-space: nowrap` 並設為不可壓縮，長標題不能把它們擠成直排。
 
 ---
 
@@ -238,7 +257,7 @@ components:
 - 佈局：
   - 左側/上方：精緻書籍封面或溫暖手繪感書本 Icon。
   - 右側/主體：
-    - 書名（Serif 粗體，最大兩行截斷）
+    - 書名（Serif 粗體，單行截斷；超出以 `…` 呈現，並以 `title` 屬性保留完整書名）
     - 作者（次要文字）
     - 位置資訊：`📍 房間書櫃 · 第二層左邊`（重要醒目標籤）
     - 狀態標籤（右下或右上）
@@ -255,6 +274,28 @@ components:
 
 ---
 
+## Iconography
+
+圖示分成兩種角色，不要互相取代：
+
+### 1. 功能性圖示 (Functional Icons)
+
+介面上表達操作或資料意義的小圖示，一律使用元件 `components/AppIcon.vue` 的內嵌 SVG：
+
+- 規格：`viewBox="0 0 24 24"`、線條式（`fill="none"`、`stroke-width: 1.8`、圓端點）、顏色一律 `currentColor`，尺寸預設 `1.05em` 跟著文字大小縮放。
+- 目前提供：`location`（書籍位置）、`search`（搜尋框）、`chevron`（展開／收合）、`clock`（今天到期）、`alert`（逾期）。
+- 新增圖示時加在 `AppIcon.vue` 的 `name` 聯集裡，不要在頁面裡直接寫 SVG，也不要用 `⌖`、`⌕`、`›` 這類符號字元充當圖示（各平台字型差異大且無法對齊）。
+- 不額外載入 icon font：專案已採內嵌 SVG，集中在單一元件即可達到一致性，也省下一份字型檔的下載。
+
+### 2. 情境插畫 (Illustrative Icons)
+
+帶有手帳溫度、用來營造氣氛的圖像，維持 emoji／插畫風格，不要換成線條 SVG：
+
+- 統計資訊卡：`📚 藏書總數`、`🏠 在家`、`👤 借出中`。
+- 空狀態插圖：`📚`、`🌿`、`📝` 等大尺寸圖像。
+
+---
+
 ## Do's and Don'ts
 
 ### Do's (建議做法)
@@ -262,9 +303,12 @@ components:
 - **DO** 永遠把「位置資訊（哪間房、哪層櫃）」放在最醒目、最容易看到的地方，因為找書是產品的靈魂。
 - **DO** 確保手機與 PC 兩端有統一的色彩標籤語言，一眼能分辨書在不在家。
 - **DO** 在首頁迎賓區、空狀態（如「目前還沒有藏書」）放置具手帳質感的溫暖插畫與親切文案。
+- **DO** 字體只在 `:root` 設定一次，新元件靠繼承取得字型。
 
 ### Don'ts (避免做法)
 - **DON'T** 使用高飽和度、冰冷的純藍或純紅，也不要使用未經調和的純黑 `#000000` 與純白冷光。
 - **DON'T** 把介面設計成大型圖書館的借書證檢索終端機（如大量密集灰底表格與冰冷代號）。
 - **DON'T** 在實際操作與搜尋結果列表中塞滿裝飾插圖，干擾使用者的閱讀與找書視線。
+- **DON'T** 讓過長的書名把同一列的按鈕或狀態標籤擠變形；書名一律單行截斷，操作區維持不可壓縮。
 - **DON'T** 讓「刪除」按鈕以大紅高對比奪走視覺重心，增加誤觸風險。
+- **DON'T** 在任何元件裡另外宣告 `font-family`，也不要混用襯線體與黑體。

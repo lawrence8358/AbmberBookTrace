@@ -10,6 +10,7 @@ import {
   type BorrowingReminder,
   type LibraryStats,
 } from "../api";
+import AppIcon from "../components/AppIcon.vue";
 import ReminderList from "../components/ReminderList.vue";
 import StatusBadge from "../components/StatusBadge.vue";
 
@@ -119,7 +120,7 @@ onMounted(() => {
 
   <section id="library-search" class="library-tools" aria-label="書庫搜尋與篩選">
     <label class="search-field">
-      <span class="search-icon" aria-hidden="true">⌕</span>
+      <AppIcon class="search-icon" name="search" />
       <span class="sr-only">搜尋書名、作者或 ISBN</span>
       <input
         v-model="search"
@@ -200,8 +201,7 @@ onMounted(() => {
     <div class="recent-book-list">
       <article v-for="book in stats.recentBooks" :key="book.id" class="recent-book-card">
         <div>
-          <p class="book-card-label">BOOK {{ String(book.id).padStart(2, "0") }}</p>
-          <h3><RouterLink :to="`/books/${book.id}`">{{ book.title }}</RouterLink></h3>
+          <h3 :title="book.title"><RouterLink :to="`/books/${book.id}`">{{ book.title }}</RouterLink></h3>
           <p class="book-author">{{ book.author || "未記錄作者" }}</p>
         </div>
         <StatusBadge :status="book.status" />
@@ -236,12 +236,11 @@ onMounted(() => {
           <span v-else aria-hidden="true">封面</span>
         </div>
         <div class="book-card-main">
-          <p class="book-card-label">BOOK {{ String(book.id).padStart(2, "0") }}</p>
-          <h3><RouterLink :to="`/books/${book.id}`">{{ book.title }}</RouterLink></h3>
+          <h3 :title="book.title"><RouterLink :to="`/books/${book.id}`">{{ book.title }}</RouterLink></h3>
           <p class="book-author">{{ book.author || "未記錄作者" }}</p>
           <p class="book-location">
-            <span aria-hidden="true">⌖</span>
-            {{ book.location || "尚未記錄位置" }}<template v-if="book.detailedLocation"> · {{ book.detailedLocation }}</template>
+            <AppIcon name="location" />
+            <span class="book-location-text">{{ book.location || "尚未記錄位置" }}<template v-if="book.detailedLocation"> · {{ book.detailedLocation }}</template></span>
           </p>
         </div>
         <StatusBadge :status="book.status" />

@@ -88,8 +88,7 @@ onMounted(() => {
           <span v-else aria-hidden="true">封面</span>
         </div>
         <div class="recycle-card-main">
-          <p class="book-card-label">BOOK {{ String(book.id).padStart(2, "0") }}</p>
-          <h3>{{ book.title }}</h3>
+          <h3 :title="book.title">{{ book.title }}</h3>
           <p class="book-author">{{ book.author || "未記錄作者" }}</p>
           <p class="recycle-meta">刪除於 {{ formatDate(book.deletedAtUtc) }} · {{ daysRemaining(book) }} 天內可還原</p>
         </div>

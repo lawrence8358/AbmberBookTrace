@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import {
   borrowBook,
@@ -12,6 +12,7 @@ import {
   type Book,
   uploadBookCover,
 } from "../api";
+import AppIcon from "../components/AppIcon.vue";
 import BookCoverPicker from "../components/BookCoverPicker.vue";
 import StatusBadge from "../components/StatusBadge.vue";
 
@@ -28,6 +29,12 @@ const isReturning = ref(false);
 const borrowingHistory = ref<BorrowingHistoryRecord[]>([]);
 const isHistoryLoading = ref(true);
 const historyError = ref("");
+const isHistoryOpen = ref(false);
+
+// 目前借閱已經顯示在上方的借閱狀態卡片，這裡只列出還完的紀錄，避免重複。
+const pastBorrowings = computed(() =>
+  borrowingHistory.value.filter((record) => record.status !== "CURRENT"),
+);
 const deleteError = ref("");
 const isDeleting = ref(false);
 const borrowForm = reactive({
@@ -243,7 +250,7 @@ onMounted(loadBook);
     <div class="detail-header">
       <div>
         <p class="eyebrow">書籍詳細資料</p>
-        <h1>{{ book.title }}</h1>
+        <h1 :title="book.title">{{ book.title }}</h1>
         <p class="detail-author">{{ book.author || "未記錄作者" }}</p>
       </div>
       <div class="detail-header-actions">
@@ -277,7 +284,10 @@ onMounted(loadBook);
     <div class="detail-grid">
       <section class="detail-card location-card">
         <p class="detail-label">目前位置</p>
-        <p class="detail-value location-value">{{ book.location || "尚未記錄位置" }}</p>
+        <p class="detail-value location-value">
+          <AppIcon name="location" />
+          <span>{{ book.location || "尚未記錄位置" }}</span>
+        </p>
         <p v-if="book.detailedLocation" class="detail-subvalue">{{ book.detailedLocation }}</p>
       </section>
       <section class="detail-card">
@@ -361,33 +371,45 @@ onMounted(loadBook);
     <section class="detail-card borrowing-history-card" aria-labelledby="borrowing-history-title">
       <div class="detail-card-heading">
         <div>
-          <p class="detail-label">完整流轉</p>
+          <p class="detail-label">誰借過這本書</p>
           <h2 id="borrowing-history-title">借閱歷史</h2>
         </div>
-        <span class="section-note">{{ borrowingHistory.length }} 筆紀錄</span>
+        <span class="section-note">{{ pastBorrowings.length }} 筆紀錄</span>
       </div>
 
       <p v-if="historyError" class="feedback feedback-error" role="alert">{{ historyError }}</p>
       <p v-else-if="isHistoryLoading" class="loading-inline" role="status">正在載入歷史⋯</p>
-      <div v-else-if="borrowingHistory.length" class="detail-history-list">
-        <article
-          v-for="record in borrowingHistory"
-          :key="record.id"
-          class="detail-history-record"
-          :data-history-status="record.status"
+      <template v-else-if="pastBorrowings.length">
+        <button
+          class="history-toggle"
+          type="button"
+          :aria-expanded="isHistoryOpen"
+          aria-controls="borrowing-history-list"
+          @click="isHistoryOpen = !isHistoryOpen"
         >
-          <div class="detail-history-heading">
-            <strong>{{ record.status === "CURRENT" ? "目前借閱" : "已歸還" }}</strong>
-            <span>{{ formatDate(record.borrowDateUtc) }}</span>
-          </div>
-          <dl class="metadata-list history-metadata">
-            <div><dt>借閱人</dt><dd>{{ record.borrowerName }}</dd></div>
-            <div><dt>預計歸還日期</dt><dd>{{ formatDate(record.dueDate) }}</dd></div>
-            <div><dt>實際歸還日期</dt><dd>{{ formatDate(record.returnedAtUtc) }}</dd></div>
-            <div v-if="record.note"><dt>借出備註</dt><dd>{{ record.note }}</dd></div>
-          </dl>
-        </article>
-      </div>
+          <AppIcon class="history-toggle-icon" name="chevron" />
+          <span>{{ isHistoryOpen ? "收合借閱歷史" : `展開借閱歷史（${pastBorrowings.length} 筆）` }}</span>
+        </button>
+        <div v-show="isHistoryOpen" id="borrowing-history-list" class="detail-history-list">
+          <article
+            v-for="record in pastBorrowings"
+            :key="record.id"
+            class="detail-history-record"
+            :data-history-status="record.status"
+          >
+            <div class="detail-history-heading">
+              <strong>已歸還</strong>
+              <span>{{ formatDate(record.borrowDateUtc) }}</span>
+            </div>
+            <dl class="metadata-list history-metadata">
+              <div><dt>借閱人</dt><dd>{{ record.borrowerName }}</dd></div>
+              <div><dt>預計歸還日期</dt><dd>{{ formatDate(record.dueDate) }}</dd></div>
+              <div><dt>實際歸還日期</dt><dd>{{ formatDate(record.returnedAtUtc) }}</dd></div>
+              <div v-if="record.note"><dt>借出備註</dt><dd>{{ record.note }}</dd></div>
+            </dl>
+          </article>
+        </div>
+      </template>
       <p v-else class="empty-borrowing">這本書還沒有借閱紀錄</p>
     </section>
 

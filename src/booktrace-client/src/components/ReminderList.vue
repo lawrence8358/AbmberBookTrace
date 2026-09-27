@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterLink } from "vue-router";
 import type { BorrowingReminder } from "../api";
+import AppIcon from "./AppIcon.vue";
 
 defineProps<{
   reminders: BorrowingReminder[];
@@ -25,12 +26,14 @@ function formatDate(value: string) {
       :class="reminder.reminderType === 'OVERDUE' ? 'reminder-card-overdue' : 'reminder-card-due'"
       :data-reminder-type="reminder.reminderType"
     >
-      <div class="reminder-icon" aria-hidden="true">{{ reminder.reminderType === "OVERDUE" ? "!" : "◷" }}</div>
+      <div class="reminder-icon" aria-hidden="true">
+        <AppIcon :name="reminder.reminderType === 'OVERDUE' ? 'alert' : 'clock'" />
+      </div>
       <div class="reminder-content">
         <p class="reminder-type">
           {{ reminder.reminderType === "OVERDUE" ? "逾期通知" : "今天到期" }}
         </p>
-        <h3><RouterLink :to="`/books/${reminder.bookId}`">{{ reminder.bookTitle }}</RouterLink></h3>
+        <h3 :title="reminder.bookTitle"><RouterLink :to="`/books/${reminder.bookId}`">{{ reminder.bookTitle }}</RouterLink></h3>
         <p class="reminder-detail">
           借給 {{ reminder.borrowerName }} · 預計歸還 {{ formatDate(reminder.dueDate) }}
           <template v-if="reminder.reminderType === 'OVERDUE'"> · 已逾期 {{ reminder.daysOverdue }} 天</template>
