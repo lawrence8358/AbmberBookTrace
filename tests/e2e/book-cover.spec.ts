@@ -34,7 +34,7 @@ test("desktop user can add, replace, remove, and persist a book cover", async ({
     buffer: validPng,
   });
   await expect(page.getByText("封面已更新。", { exact: true })).toBeVisible();
-  await expect(page.locator(".cover-card img")).toHaveAttribute("src", /v=/);
+  await expect(page.locator(".cover-card img")).toHaveAttribute("src", /\/covers\/[a-f0-9]+\.png$/);
   const replacementCoverUrl = await page.locator(".cover-card img").getAttribute("src");
   expect(replacementCoverUrl).not.toBe(firstCoverUrl);
 

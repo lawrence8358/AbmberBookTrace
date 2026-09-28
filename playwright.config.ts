@@ -1,6 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const e2ePort = process.env.E2E_PORT ?? process.env.PLAYWRIGHT_PORT ?? "5080";
+const testData = mkdtempSync(join(tmpdir(), "booktrace-e2e-"));
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -13,15 +17,18 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${e2ePort}`,
     trace: "on-first-retry",
     launchOptions: {
-      executablePath: "/usr/bin/google-chrome",
+      executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
+        ?? (process.platform === "win32" ? "C:/Program Files/Google/Chrome/Application/chrome.exe" : "/usr/bin/google-chrome"),
     },
   },
   webServer: {
     command:
-      `cd src/booktrace-client && node_modules/.bin/vue-tsc --noEmit && node_modules/.bin/vite build && cd ../.. && dotnet run --project src/BookTrace.Api --no-launch-profile --urls http://127.0.0.1:${e2ePort}`,
+      `pnpm --dir src/booktrace-client exec vue-tsc --noEmit && pnpm --dir src/booktrace-client exec vite build && dotnet run --project src/BookTrace.Api --no-launch-profile --urls http://127.0.0.1:${e2ePort}`,
     url: `http://127.0.0.1:${e2ePort}/health`,
     env: {
       ASPNETCORE_ENVIRONMENT: "Playwright",
+      ConnectionStrings__BookTrace: `Data Source=${join(testData, "test.db")}`,
+      CoverStorage__Path: join(testData, "covers"),
       BOOKTRACE_NOW_UTC: process.env.BOOKTRACE_NOW_UTC ?? "2026-09-20T09:00:00.000Z",
     },
     reuseExistingServer: false,

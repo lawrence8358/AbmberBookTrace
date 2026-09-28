@@ -30,9 +30,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <PageHeading title="提醒" description="到期日當天與逾期借閱會在這裡出現，不會寄送 Email、簡訊或手機推播。">
-    <RouterLink class="button button-secondary" to="/borrowings">查看借閱歷史</RouterLink>
-  </PageHeading>
+  <PageHeading title="提醒" description="到期日當天與逾期借閱會在這裡出現，不會寄送 Email、簡訊或手機推播。" />
 
   <p v-if="errorMessage" class="feedback feedback-error" role="alert">{{ errorMessage }}</p>
   <div v-else-if="isLoading" class="loading-state" role="status">正在檢查借閱提醒⋯</div>

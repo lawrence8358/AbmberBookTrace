@@ -296,6 +296,8 @@ onMounted(loadBook);
         <dl class="metadata-list">
           <div><dt>ISBN</dt><dd>{{ book.isbn || "未記錄" }}</dd></div>
           <div><dt>出版社</dt><dd>{{ book.publisher || "未記錄" }}</dd></div>
+          <div><dt>出版日期</dt><dd>{{ book.publicationDate || "未記錄" }}</dd></div>
+          <div><dt>購入日期</dt><dd>{{ book.purchaseDate || "未記錄" }}</dd></div>
           <div><dt>分類／標籤</dt><dd>{{ book.category || "未記錄" }}</dd></div>
         </dl>
       </section>

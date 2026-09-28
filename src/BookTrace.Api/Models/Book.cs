@@ -13,11 +13,13 @@ public sealed class Book
     public string? Author { get; set; }
     public string? Isbn { get; set; }
     public string? Publisher { get; set; }
+    public DateOnly? PublicationDate { get; set; }
+    public DateOnly? PurchaseDate { get; set; }
     public string? Category { get; set; }
     public string? Location { get; set; }
     public string? DetailedLocation { get; set; }
     public string? Notes { get; set; }
-    public byte[]? CoverImageData { get; set; }
+    public string? CoverStorageName { get; set; }
     public string? CoverContentType { get; set; }
     public string? CoverFileName { get; set; }
     public BookStatus Status { get; set; } = BookStatus.Home;

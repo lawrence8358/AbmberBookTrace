@@ -58,9 +58,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <PageHeading title="借閱歷史" description="每次借出與歸還都會保留，歷史紀錄只能查看，不能修改或刪除。">
-    <RouterLink class="button button-secondary" to="/notifications">查看提醒</RouterLink>
-  </PageHeading>
+  <PageHeading title="借閱歷史" description="每次借出與歸還都會保留，歷史紀錄只能查看，不能修改或刪除。" />
 
   <div class="filter-pills history-filters" role="group" aria-label="借閱歷史篩選">
     <button

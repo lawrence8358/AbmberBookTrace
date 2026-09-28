@@ -124,3 +124,4 @@ playwright/.cache/
 
 # ASP.NET static frontend build output
 src/BookTrace.Api/wwwroot/
+src/BookTrace.Api/uploads/

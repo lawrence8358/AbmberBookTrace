@@ -21,6 +21,8 @@ const form = reactive({
   author: "",
   isbn: "",
   publisher: "",
+  publicationDate: "",
+  purchaseDate: "",
   category: "",
   location: "",
   detailedLocation: "",
@@ -39,6 +41,8 @@ async function loadBook() {
     form.author = book.author ?? "";
     form.isbn = book.isbn ?? "";
     form.publisher = book.publisher ?? "";
+    form.publicationDate = book.publicationDate ?? "";
+    form.purchaseDate = book.purchaseDate ?? "";
     form.category = book.category ?? "";
     form.location = book.location ?? "";
     form.detailedLocation = book.detailedLocation ?? "";
@@ -74,9 +78,14 @@ async function saveBook() {
 
   isSaving.value = true;
   try {
+    const input = {
+      ...form,
+      publicationDate: form.publicationDate || null,
+      purchaseDate: form.purchaseDate || null,
+    };
     const book = isEdit.value
-      ? await updateBook(bookId.value, form)
-      : await createBook(form);
+      ? await updateBook(bookId.value, input)
+      : await createBook(input);
     if (coverFile.value) {
       await uploadBookCover(book.id, coverFile.value);
     } else if (isEdit.value && shouldRemoveCover.value) {
@@ -129,6 +138,14 @@ onMounted(() => {
           <label class="field">
             <span>分類／標籤</span>
             <input v-model="form.category" type="text" />
+          </label>
+          <label class="field">
+            <span>出版日期</span>
+            <input v-model="form.publicationDate" type="date" />
+          </label>
+          <label class="field">
+            <span>購入日期</span>
+            <input v-model="form.purchaseDate" type="date" />
           </label>
         </div>
       </div>

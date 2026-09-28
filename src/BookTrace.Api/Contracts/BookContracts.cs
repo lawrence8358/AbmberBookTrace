@@ -10,7 +10,10 @@ public sealed record CreateBookRequest(
     string? Category,
     string? Location,
     string? DetailedLocation,
-    string? Notes);
+    string? Notes,
+    bool SkipIfExists = false,
+    DateOnly? PublicationDate = null,
+    DateOnly? PurchaseDate = null);
 
 public sealed record UpdateBookRequest(
     string? Title,
@@ -20,7 +23,9 @@ public sealed record UpdateBookRequest(
     string? Category,
     string? Location,
     string? DetailedLocation,
-    string? Notes);
+    string? Notes,
+    DateOnly? PublicationDate = null,
+    DateOnly? PurchaseDate = null);
 
 public sealed record BorrowBookRequest(
     string? BorrowerName,
@@ -112,7 +117,9 @@ public sealed record BookResponse(
     string Status,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc,
-    BorrowingRecordResponse? CurrentBorrowing)
+    BorrowingRecordResponse? CurrentBorrowing,
+    DateOnly? PublicationDate,
+    DateOnly? PurchaseDate)
 {
     public static BookResponse From(Book book, BorrowingRecord? currentBorrowing = null) => new(
         book.Id,
@@ -128,7 +135,9 @@ public sealed record BookResponse(
         book.Status == BookStatus.Home ? "HOME" : "BORROWED",
         book.CreatedAtUtc,
         book.UpdatedAtUtc,
-        currentBorrowing is null ? null : BorrowingRecordResponse.From(currentBorrowing));
+        currentBorrowing is null ? null : BorrowingRecordResponse.From(currentBorrowing),
+        book.PublicationDate,
+        book.PurchaseDate);
 }
 
 public sealed record LibraryStatsResponse(
@@ -164,7 +173,7 @@ public sealed record RecycleBinBookResponse(
 
 internal static class BookContractHelpers
 {
-    public static string? CoverUrlFor(Book book) => book.CoverImageData is null
+    public static string? CoverUrlFor(Book book) => book.CoverStorageName is null
         ? null
-        : $"/api/books/{book.Id}/cover?v={book.UpdatedAtUtc.Ticks}";
+        : $"/covers/{book.CoverStorageName}";
 }

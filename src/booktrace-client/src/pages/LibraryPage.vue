@@ -9,6 +9,7 @@ import {
   type LibraryStats,
 } from "../api";
 import AppIcon from "../components/AppIcon.vue";
+import PageHeading from "../components/PageHeading.vue";
 import StatusBadge from "../components/StatusBadge.vue";
 import { librarySearch } from "../librarySearch";
 
@@ -88,17 +89,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="page-heading library-heading">
-    <div>
-      <h1>我的書庫</h1>
-      <p class="intro">搜尋書名、作者或 ISBN，快速找到每一本書。</p>
-      <RouterLink class="button button-secondary library-add" to="/books/new">＋ 新增書籍</RouterLink>
-    </div>
-    <div class="library-welcome" aria-hidden="true">
-      <p>書籍會記得，<br />那些喜歡的時光。</p>
-      <img src="/images/reading-cat.webp" width="768" height="512" alt="" />
-    </div>
-  </section>
+  <PageHeading title="我的書庫" description="搜尋書名、作者或 ISBN，快速找到每一本書。" />
 
   <section id="library-search" class="library-tools" aria-label="書庫搜尋與篩選">
     <label class="search-field mobile-only">
@@ -113,18 +104,21 @@ onMounted(() => {
       <button v-if="search" class="search-clear" type="button" aria-label="清除搜尋" @click="search = ''">×</button>
     </label>
 
-    <div class="filter-pills" role="group" aria-label="書籍狀態篩選">
-      <button
-        v-for="filter in statusFilters"
-        :key="filter.value"
-        class="filter-pill"
-        :class="{ 'filter-pill-active': selectedStatus === filter.value }"
-        type="button"
-        :aria-pressed="selectedStatus === filter.value"
-        @click="selectedStatus = filter.value"
-      >
-        {{ filter.label }}
-      </button>
+    <div class="library-actions">
+      <div class="filter-pills" role="group" aria-label="書籍狀態篩選">
+        <button
+          v-for="filter in statusFilters"
+          :key="filter.value"
+          class="filter-pill"
+          :class="{ 'filter-pill-active': selectedStatus === filter.value }"
+          type="button"
+          :aria-pressed="selectedStatus === filter.value"
+          @click="selectedStatus = filter.value"
+        >
+          {{ filter.label }}
+        </button>
+      </div>
+      <RouterLink class="button button-secondary" to="/books/new">＋ 新增書籍</RouterLink>
     </div>
   </section>
 

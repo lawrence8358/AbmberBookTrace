@@ -1,16 +1,25 @@
+using BookTrace.Api.Services;
+using BookTrace.Mcp;
 using BookTrace.Api.Contracts;
 using BookTrace.Api.Data;
 using BookTrace.Api.Models;
+using BookTrace.Api.Storage;
 using Microsoft.EntityFrameworkCore;
-
-const long MaxCoverSizeBytes = 5 * 1024 * 1024;
+using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
+var mcpEnabled = builder.Configuration.GetValue("Mcp:Enabled", true);
+if (mcpEnabled)
+{
+    builder.Services.AddScoped<IBookCatalog, McpBookCatalog>();
+    builder.Services.AddBookTraceMcp();
+}
 
 var connectionString = builder.Configuration.GetConnectionString("BookTrace")
     ?? "Data Source=booktrace.db";
 builder.Services.AddDbContext<BookDbContext>(options => options.UseSqlite(connectionString));
 builder.Services.AddHostedService<RecycleBinCleanupService>();
+builder.Services.AddSingleton<CoverStorage>();
 builder.Services.AddSingleton<TimeProvider>(_ =>
 {
     var configuredNow = Environment.GetEnvironmentVariable("BOOKTRACE_NOW_UTC");
@@ -35,17 +44,18 @@ using (var scope = app.Services.CreateScope())
     await database.Database.MigrateAsync();
     await RecycleBinMaintenance.PurgeExpiredDeletedBooksAsync(
         database,
+        scope.ServiceProvider.GetRequiredService<CoverStorage>(),
         scope.ServiceProvider.GetRequiredService<TimeProvider>(),
         CancellationToken.None);
 }
 
 app.Use(async (context, next) =>
 {
-    if (context.Request.Path.StartsWithSegments("/api"))
+    if (context.Request.Path.StartsWithSegments("/api") || context.Request.Path.StartsWithSegments("/mcp"))
     {
         var database = context.RequestServices.GetRequiredService<BookDbContext>();
         var timeProvider = context.RequestServices.GetRequiredService<TimeProvider>();
-        await RecycleBinMaintenance.PurgeExpiredDeletedBooksAsync(database, timeProvider, context.RequestAborted);
+        await RecycleBinMaintenance.PurgeExpiredDeletedBooksAsync(database, context.RequestServices.GetRequiredService<CoverStorage>(), timeProvider, context.RequestAborted);
     }
 
     await next(context);
@@ -53,57 +63,22 @@ app.Use(async (context, next) =>
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
-
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
-
-app.MapGet("/api/books", async (
-    string? search,
-    string? status,
-    BookDbContext database,
-    CancellationToken cancellationToken) =>
+app.UseStaticFiles(new StaticFileOptions
 {
-    var booksQuery = database.Books
-        .AsNoTracking()
-        .Where(book => !book.IsDeleted);
-    var normalizedSearch = search?.Trim().ToLowerInvariant();
-
-    if (!string.IsNullOrEmpty(normalizedSearch))
+    FileProvider = new PhysicalFileProvider(app.Services.GetRequiredService<CoverStorage>().RootPath),
+    RequestPath = "/covers",
+    OnPrepareResponse = context =>
     {
-        booksQuery = booksQuery.Where(book =>
-            book.Title.ToLower().Contains(normalizedSearch)
-            || (book.Author != null && book.Author.ToLower().Contains(normalizedSearch))
-            || (book.Isbn != null && book.Isbn.ToLower().Contains(normalizedSearch)));
-    }
-
-    if (!string.IsNullOrWhiteSpace(status)
-        && !status.Equals("ALL", StringComparison.OrdinalIgnoreCase))
-    {
-        if (!Enum.TryParse<BookStatus>(status, ignoreCase: true, out var requestedStatus))
-        {
-            return Results.BadRequest(new { message = "無法辨識這個書籍狀態篩選。" });
-        }
-
-        booksQuery = booksQuery.Where(book => book.Status == requestedStatus);
-    }
-
-    var books = await booksQuery
-        .Select(book => new
-        {
-            Book = book,
-            HasAuthor = book.Author != null && book.Author != "",
-            AuthorCount = book.Author == null
-                ? 0
-                : database.Books.Count(candidate => !candidate.IsDeleted && candidate.Author == book.Author),
-        })
-        .OrderByDescending(book => book.HasAuthor)
-        .ThenByDescending(book => book.AuthorCount)
-        .ThenBy(book => book.Book.Title.ToLower())
-        .ThenBy(book => book.Book.Id)
-        .Select(book => BookResponse.From(book.Book))
-        .ToListAsync(cancellationToken);
-
-    return Results.Ok(books);
+        context.Context.Response.Headers.CacheControl = "public,max-age=31536000,immutable";
+        context.Context.Response.Headers.XContentTypeOptions = "nosniff";
+    },
 });
+
+app.MapGet("/health", () => Results.Ok(new { status = "ok", mcpEnabled }));
+if (mcpEnabled) app.MapBookTraceMcp();
+else app.Map("/mcp", () => Results.NotFound());
+
+app.MapGet("/api/books", BookOperations.ListAsync);
 
 app.MapGet("/api/books/stats", async (
     BookDbContext database,
@@ -125,21 +100,7 @@ app.MapGet("/api/books/stats", async (
     return Results.Ok(new LibraryStatsResponse(totalCount, homeCount, borrowedCount, recentBooks));
 });
 
-app.MapGet("/api/books/{id:int}", async (
-    int id,
-    BookDbContext database,
-    CancellationToken cancellationToken) =>
-{
-    var book = await database.Books
-        .AsNoTracking()
-        .Include(candidate => candidate.BorrowingRecords
-            .Where(record => record.ReturnedAtUtc == null))
-        .SingleOrDefaultAsync(candidate => candidate.Id == id && !candidate.IsDeleted, cancellationToken);
-
-    return book is null
-        ? Results.NotFound(new { message = "找不到這本書。" })
-        : Results.Ok(BookResponse.From(book, book.BorrowingRecords.SingleOrDefault()));
-});
+app.MapGet("/api/books/{id:int}", BookOperations.GetAsync);
 
 app.MapGet("/api/books/{id:int}/borrowing-history", async (
     int id,
@@ -225,87 +186,9 @@ app.MapGet("/api/reminders", async (
         .ToList());
 });
 
-app.MapGet("/api/books/{id:int}/cover", async (
-    int id,
-    BookDbContext database,
-    CancellationToken cancellationToken) =>
-{
-    var cover = await database.Books
-        .AsNoTracking()
-        .Where(book => book.Id == id)
-        .Select(book => new { book.CoverImageData, book.CoverContentType })
-        .SingleOrDefaultAsync(cancellationToken);
+app.MapPost("/api/books", BookOperations.CreateAsync);
 
-    return cover?.CoverImageData is null || cover.CoverContentType is null
-        ? Results.NotFound()
-        : Results.File(cover.CoverImageData, cover.CoverContentType);
-});
-
-app.MapPost("/api/books", async (
-    CreateBookRequest request,
-    BookDbContext database,
-    TimeProvider timeProvider,
-    CancellationToken cancellationToken) =>
-{
-    if (string.IsNullOrWhiteSpace(request.Title))
-    {
-        return Results.BadRequest(new
-        {
-            message = "請輸入書名，才能保存這本書。",
-            errors = new { title = "書名是必填欄位。" },
-        });
-    }
-
-    var now = timeProvider.GetUtcNow().UtcDateTime;
-    var book = new Book
-    {
-        Status = BookStatus.Home,
-        CreatedAtUtc = now,
-        UpdatedAtUtc = now,
-    };
-    ApplyBookFields(book, request.Title, request.Author, request.Isbn, request.Publisher,
-        request.Category, request.Location, request.DetailedLocation, request.Notes);
-
-    database.Books.Add(book);
-    await database.SaveChangesAsync(cancellationToken);
-
-    return Results.Created($"/api/books/{book.Id}", BookResponse.From(book));
-});
-
-app.MapPut("/api/books/{id:int}", async (
-    int id,
-    UpdateBookRequest request,
-    BookDbContext database,
-    TimeProvider timeProvider,
-    CancellationToken cancellationToken) =>
-{
-    if (string.IsNullOrWhiteSpace(request.Title))
-    {
-        return Results.BadRequest(new
-        {
-            message = "請輸入書名，才能保存這本書。",
-            errors = new { title = "書名是必填欄位。" },
-        });
-    }
-
-    var book = await database.Books
-        .Include(candidate => candidate.BorrowingRecords)
-        .SingleOrDefaultAsync(candidate => candidate.Id == id && !candidate.IsDeleted, cancellationToken);
-    if (book is null)
-    {
-        return Results.NotFound(new { message = "找不到這本書。" });
-    }
-
-    ApplyBookFields(book, request.Title, request.Author, request.Isbn, request.Publisher,
-        request.Category, request.Location, request.DetailedLocation, request.Notes);
-    book.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
-
-    await database.SaveChangesAsync(cancellationToken);
-
-    return Results.Ok(BookResponse.From(
-        book,
-        book.BorrowingRecords.SingleOrDefault(record => record.ReturnedAtUtc == null)));
-});
+app.MapPut("/api/books/{id:int}", BookOperations.UpdateAsync);
 
 app.MapDelete("/api/books/{id:int}", async (
     int id,
@@ -352,6 +235,7 @@ app.MapGet("/api/recycle-bin", async (
 app.MapPost("/api/recycle-bin/{id:int}/restore", async (
     int id,
     BookDbContext database,
+    CoverStorage storage,
     TimeProvider timeProvider,
     CancellationToken cancellationToken) =>
 {
@@ -371,6 +255,7 @@ app.MapPost("/api/recycle-bin/{id:int}/restore", async (
             .ExecuteDeleteAsync(cancellationToken);
         database.Books.Remove(book);
         await database.SaveChangesAsync(cancellationToken);
+        storage.Delete(book.CoverStorageName);
         return Results.NotFound(new { message = "這本書已超過 30 天，無法還原。" });
     }
 
@@ -493,55 +378,12 @@ app.MapPost("/api/books/{id:int}/return", async (
     return Results.Ok(BookResponse.From(book));
 });
 
-app.MapPost("/api/books/{id:int}/cover", async (
-    int id,
-    IFormFile? cover,
-    BookDbContext database,
-    TimeProvider timeProvider,
-    CancellationToken cancellationToken) =>
-{
-    if (cover is null)
-    {
-        return Results.BadRequest(new
-        {
-            message = "請選擇一張封面圖片。",
-            errors = new { cover = "請選擇一張封面圖片。" },
-        });
-    }
-
-    var upload = await ReadCoverAsync(cover, cancellationToken);
-    if (upload.Error is not null)
-    {
-        return Results.BadRequest(new
-        {
-            message = upload.Error,
-            errors = new { cover = upload.Error },
-        });
-    }
-
-    var book = await database.Books
-        .Include(candidate => candidate.BorrowingRecords
-            .Where(record => record.ReturnedAtUtc == null))
-        .SingleOrDefaultAsync(candidate => candidate.Id == id && !candidate.IsDeleted, cancellationToken);
-    if (book is null)
-    {
-        return Results.NotFound(new { message = "找不到這本書。" });
-    }
-
-    book.CoverImageData = upload.Content;
-    book.CoverContentType = upload.ContentType;
-    book.CoverFileName = Path.GetFileName(cover.FileName);
-    book.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
-    await database.SaveChangesAsync(cancellationToken);
-
-    return Results.Ok(BookResponse.From(
-        book,
-        book.BorrowingRecords.SingleOrDefault()));
-}).DisableAntiforgery();
+app.MapPost("/api/books/{id:int}/cover", BookOperations.UploadCoverAsync).DisableAntiforgery();
 
 app.MapDelete("/api/books/{id:int}/cover", async (
     int id,
     BookDbContext database,
+    CoverStorage storage,
     TimeProvider timeProvider,
     CancellationToken cancellationToken) =>
 {
@@ -552,16 +394,18 @@ app.MapDelete("/api/books/{id:int}/cover", async (
         return Results.NotFound(new { message = "找不到這本書。" });
     }
 
-    if (book.CoverImageData is null)
+    if (book.CoverStorageName is null)
     {
         return Results.NotFound(new { message = "這本書目前沒有封面。" });
     }
 
-    book.CoverImageData = null;
+    var oldName = book.CoverStorageName;
+    book.CoverStorageName = null;
     book.CoverContentType = null;
     book.CoverFileName = null;
     book.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
     await database.SaveChangesAsync(cancellationToken);
+    storage.Delete(oldName);
 
     return Results.NoContent();
 });
@@ -572,78 +416,6 @@ app.Run();
 
 static string? TrimToNull(string? value) =>
     string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-
-static void ApplyBookFields(
-    Book book,
-    string? title,
-    string? author,
-    string? isbn,
-    string? publisher,
-    string? category,
-    string? location,
-    string? detailedLocation,
-    string? notes)
-{
-    book.Title = title?.Trim() ?? string.Empty;
-    book.Author = TrimToNull(author);
-    book.Isbn = TrimToNull(isbn);
-    book.Publisher = TrimToNull(publisher);
-    book.Category = TrimToNull(category);
-    book.Location = TrimToNull(location);
-    book.DetailedLocation = TrimToNull(detailedLocation);
-    book.Notes = TrimToNull(notes);
-}
-
-static async Task<CoverUploadResult> ReadCoverAsync(
-    IFormFile cover,
-    CancellationToken cancellationToken)
-{
-    if (cover.Length <= 0)
-    {
-        return CoverUploadResult.Invalid("封面圖片不可為空白檔案。");
-    }
-
-    if (cover.Length > MaxCoverSizeBytes)
-    {
-        return CoverUploadResult.Invalid("封面圖片不可超過 5 MB。");
-    }
-
-    var contentType = cover.ContentType.Trim().ToLowerInvariant();
-    if (!IsSupportedCoverType(contentType))
-    {
-        return CoverUploadResult.Invalid("封面只接受 JPG、PNG、GIF 或 WebP 圖片。");
-    }
-
-    await using var buffer = new MemoryStream();
-    await cover.CopyToAsync(buffer, cancellationToken);
-    var content = buffer.ToArray();
-
-    if (!MatchesImageSignature(content, contentType))
-    {
-        return CoverUploadResult.Invalid("封面圖片內容無法辨識，請重新選擇 JPG、PNG、GIF 或 WebP 圖片。");
-    }
-
-    return new CoverUploadResult(content, contentType, null);
-}
-
-static bool MatchesImageSignature(byte[] content, string contentType) => contentType switch
-{
-    "image/jpeg" => content.Length >= 3 && content[0] == 0xFF && content[1] == 0xD8 && content[2] == 0xFF,
-    "image/png" => content.AsSpan().StartsWith(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }),
-    "image/gif" => content.AsSpan().StartsWith("GIF87a"u8) || content.AsSpan().StartsWith("GIF89a"u8),
-    "image/webp" => content.Length >= 12
-        && content.AsSpan(0, 4).SequenceEqual("RIFF"u8)
-        && content.AsSpan(8, 4).SequenceEqual("WEBP"u8),
-    _ => false,
-};
-
-static bool IsSupportedCoverType(string contentType) => contentType is
-    "image/jpeg" or "image/png" or "image/gif" or "image/webp";
-
-sealed record CoverUploadResult(byte[]? Content, string? ContentType, string? Error)
-{
-    public static CoverUploadResult Invalid(string error) => new(null, null, error);
-}
 
 sealed record AgeRecycleBinRequest(int DaysAgo);
 
@@ -673,7 +445,7 @@ sealed class RecycleBinCleanupService(
         var database = scope.ServiceProvider.GetRequiredService<BookDbContext>();
         try
         {
-            await RecycleBinMaintenance.PurgeExpiredDeletedBooksAsync(database, timeProvider, cancellationToken);
+            await RecycleBinMaintenance.PurgeExpiredDeletedBooksAsync(database, scope.ServiceProvider.GetRequiredService<CoverStorage>(), timeProvider, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -695,6 +467,7 @@ static class RecycleBinMaintenance
 {
     public static async Task PurgeExpiredDeletedBooksAsync(
         BookDbContext database,
+        CoverStorage storage,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
@@ -718,5 +491,6 @@ static class RecycleBinMaintenance
         }
 
         await database.SaveChangesAsync(cancellationToken);
+        foreach (var book in expiredBooks) storage.Delete(book.CoverStorageName);
     }
 }

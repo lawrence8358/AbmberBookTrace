@@ -61,9 +61,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <PageHeading title="資源回收筒" description="刪除的書籍會保留 30 天，還原時封面與借閱歷史也會一起回來。">
-    <RouterLink class="button button-secondary" to="/books">回到我的書庫</RouterLink>
-  </PageHeading>
+  <PageHeading title="資源回收筒" description="刪除的書籍會保留 30 天，還原時封面與借閱歷史也會一起回來。" />
 
   <p v-if="errorMessage" class="feedback feedback-error" role="alert">{{ errorMessage }}</p>
   <p v-if="restoreError" class="feedback feedback-error" role="alert">{{ restoreError }}</p>

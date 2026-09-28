@@ -1,0 +1,4 @@
+interface:
+  display_name: "書蹤查書建檔"
+  short_description: "用書名或照片查證書籍資料，透過 MCP 補齊藏書並上傳封面圖片"
+  default_prompt: "使用 $booktrace-enrich 查找這本書的資料，核對版本後加入或補齊書蹤，並上傳封面。"

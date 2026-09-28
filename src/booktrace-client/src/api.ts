@@ -7,6 +7,8 @@ export interface Book {
   author: string | null;
   isbn: string | null;
   publisher: string | null;
+  publicationDate: string | null;
+  purchaseDate: string | null;
   category: string | null;
   location: string | null;
   detailedLocation: string | null;
@@ -64,6 +66,8 @@ export interface CreateBookInput {
   author: string;
   isbn: string;
   publisher: string;
+  publicationDate?: string | null;
+  purchaseDate?: string | null;
   category: string;
   location: string;
   detailedLocation: string;
