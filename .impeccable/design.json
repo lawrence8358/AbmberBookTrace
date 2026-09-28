@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-28T00:00:00+08:00",
+  "title": "Design System: 書蹤",
+  "extensions": {
+    "shadows": [
+      { "name": "paper-card", "value": "0 2px 10px rgba(140, 182, 155, 0.08), 0 1px 3px rgba(0, 0, 0, 0.03)", "purpose": "奶油底上的白色卡片" },
+      { "name": "mobile-navigation", "value": "0 -2px 12px rgba(91, 91, 91, 0.04)", "purpose": "底部五格導覽與內容的分隔" }
+    ],
+    "motion": [
+      { "name": "control-feedback", "value": "160ms ease", "purpose": "按鈕與卡片狀態轉換；prefers-reduced-motion 時停用" }
+    ],
+    "breakpoints": [
+      { "name": "phone", "value": "760px" },
+      { "name": "sidebar", "value": "1024px" },
+      { "name": "detail-columns", "value": "1200px" }
+    ]
+  },
+  "components": [],
+  "narrative": {
+    "northStar": "溫暖、自然、安靜的私人書房",
+    "overview": "沿用使用者原始設計稿的奶油白與鼠尾草綠，搭配透明水彩插畫；核心操作維持清楚易讀。",
+    "keyCharacteristics": ["單一中文字體與可調閱讀字級", "實際書封與裝飾插畫分開", "手機新增置中、左右各兩個 Tab", "手機功能選單內提供設定", "Header 通知非模態彈窗", "主要頁面標題頂端對齊"]
+  }
+}

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { addBook, useFixedClock } from "./helpers";
 
 const TODAY = "2026-09-20";
@@ -60,8 +60,13 @@ test("preserves borrowing history and shows deterministic due and overdue remind
   await expect(page.getByText(/已逾期 2 天/)).toBeVisible();
 
   await page.getByRole("link", { name: "我的書庫", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "借閱提醒" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "查看全部提醒 →", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "借閱提醒" })).toHaveCount(0);
+  await page.getByRole("button", { name: "查看提醒", exact: true }).click();
+  const popover = page.getByRole("dialog", { name: "書房提醒" });
+  await expect(popover.getByRole("link", { name: "今天到期提醒書", exact: true })).toBeVisible();
+  await expect(popover.getByRole("link", { name: "逾期提醒書", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(popover).not.toBeVisible();
 
   await page.getByRole("link", { name: "借閱歷史", exact: true }).click();
   await expect(page.locator('[data-history-status="RETURNED"]').filter({ hasText: returnedTitle })).toBeVisible();

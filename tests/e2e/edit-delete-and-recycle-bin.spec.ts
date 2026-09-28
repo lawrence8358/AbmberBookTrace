@@ -65,17 +65,14 @@ test("desktop user can edit every book field, delete with confirmation, and rest
 
   const statsBeforeDelete = await page.request.get("/api/books/stats");
   const beforeDelete = await statsBeforeDelete.json();
-  const deleteDialogMessages: string[] = [];
-  page.once("dialog", async (dialog) => {
-    deleteDialogMessages.push(dialog.message());
-    await dialog.dismiss();
-  });
   await page.getByRole("button", { name: "刪除書籍" }).click();
-  expect(deleteDialogMessages[0]).toContain(updatedTitle);
+  const deleteDialog = page.getByRole("dialog", { name: "要刪除這本書嗎？" });
+  await expect(deleteDialog).toContainText(updatedTitle);
+  await deleteDialog.getByRole("button", { name: "取消" }).click();
   await expect(page.getByRole("heading", { name: updatedTitle, exact: true })).toBeVisible();
 
-  page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "刪除書籍" }).click();
+  await deleteDialog.getByRole("button", { name: "刪除書籍", exact: true }).click();
   await expect(page).toHaveURL("/books");
   await expect(page.getByRole("heading", { name: updatedTitle, exact: true })).toHaveCount(0);
   await expect(page.locator(".library-results").getByText(updatedTitle, { exact: true })).toHaveCount(0);

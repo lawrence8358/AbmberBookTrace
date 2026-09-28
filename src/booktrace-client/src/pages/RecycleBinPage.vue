@@ -3,6 +3,8 @@ import { onMounted, ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import { getRecycleBin, restoreBook, type RecycleBinBook } from "../api";
 import StatusBadge from "../components/StatusBadge.vue";
+import PageHeading from "../components/PageHeading.vue";
+import AppIcon from "../components/AppIcon.vue";
 
 const router = useRouter();
 const books = ref<RecycleBinBook[]>([]);
@@ -59,14 +61,9 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="page-heading compact-heading">
-    <div>
-      <p class="eyebrow">保留完整資料</p>
-      <h1>資源回收筒</h1>
-      <p class="intro">刪除的書籍會保留 30 天，還原時封面與借閱歷史也會一起回來。</p>
-    </div>
+  <PageHeading title="資源回收筒" description="刪除的書籍會保留 30 天，還原時封面與借閱歷史也會一起回來。">
     <RouterLink class="button button-secondary" to="/books">回到我的書庫</RouterLink>
-  </section>
+  </PageHeading>
 
   <p v-if="errorMessage" class="feedback feedback-error" role="alert">{{ errorMessage }}</p>
   <p v-if="restoreError" class="feedback feedback-error" role="alert">{{ restoreError }}</p>
@@ -75,7 +72,6 @@ onMounted(() => {
   <section v-else-if="!errorMessage && books.length" class="recycle-results" aria-labelledby="recycle-results-title">
     <div class="section-heading-row">
       <div>
-        <p class="eyebrow">最近刪除</p>
         <h2 id="recycle-results-title">待還原書籍</h2>
       </div>
       <span class="section-note">{{ books.length }} 本</span>
@@ -85,7 +81,7 @@ onMounted(() => {
       <article v-for="book in books" :key="book.id" class="recycle-card">
         <div class="recycle-cover">
           <img v-if="book.coverUrl" :src="book.coverUrl" :alt="`${book.title} 的封面`" />
-          <span v-else aria-hidden="true">封面</span>
+          <AppIcon v-else name="book" />
         </div>
         <div class="recycle-card-main">
           <h3 :title="book.title">{{ book.title }}</h3>
@@ -108,7 +104,7 @@ onMounted(() => {
   </section>
 
   <section v-else-if="!errorMessage" class="empty-state recycle-empty" aria-labelledby="empty-recycle-title">
-    <div class="empty-illustration" aria-hidden="true">🌿</div>
+    <img class="empty-reading" src="/images/reading-girl.webp" width="768" height="512" alt="" />
     <h2 id="empty-recycle-title">資源回收筒是空的</h2>
     <p>刪除書籍後，還可以在 30 天內從這裡還原。</p>
     <RouterLink class="button button-primary" to="/books">回到我的書庫</RouterLink>

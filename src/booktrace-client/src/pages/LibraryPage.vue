@@ -4,27 +4,22 @@ import { RouterLink } from "vue-router";
 import {
   getBooks,
   getLibraryStats,
-  getReminders,
   type Book,
   type BookStatusFilter,
-  type BorrowingReminder,
   type LibraryStats,
 } from "../api";
 import AppIcon from "../components/AppIcon.vue";
-import ReminderList from "../components/ReminderList.vue";
 import StatusBadge from "../components/StatusBadge.vue";
+import { librarySearch } from "../librarySearch";
 
 const books = ref<Book[]>([]);
 const stats = ref<LibraryStats | null>(null);
-const search = ref("");
+const search = librarySearch;
 const selectedStatus = ref<BookStatusFilter>("ALL");
 const isLoading = ref(true);
 const isStatsLoading = ref(true);
 const errorMessage = ref("");
 const statsErrorMessage = ref("");
-const reminders = ref<BorrowingReminder[]>([]);
-const isRemindersLoading = ref(true);
-const remindersErrorMessage = ref("");
 let latestBooksRequest = 0;
 
 const statusFilters: Array<{ value: BookStatusFilter; label: string }> = [
@@ -77,21 +72,6 @@ async function loadStats() {
   }
 }
 
-async function loadReminders() {
-  isRemindersLoading.value = true;
-  remindersErrorMessage.value = "";
-
-  try {
-    reminders.value = await getReminders();
-  } catch (error) {
-    remindersErrorMessage.value = error instanceof Error
-      ? error.message
-      : "目前無法載入借閱提醒，請稍後再試。";
-  } finally {
-    isRemindersLoading.value = false;
-  }
-}
-
 function clearFilters() {
   search.value = "";
   selectedStatus.value = "ALL";
@@ -104,22 +84,24 @@ watch([search, selectedStatus], () => {
 onMounted(() => {
   void loadBooks();
   void loadStats();
-  void loadReminders();
 });
 </script>
 
 <template>
-  <section class="page-heading">
+  <section class="page-heading library-heading">
     <div>
-      <p class="eyebrow">我的私人書房</p>
       <h1>我的書庫</h1>
       <p class="intro">搜尋書名、作者或 ISBN，快速找到每一本書。</p>
+      <RouterLink class="button button-secondary library-add" to="/books/new">＋ 新增書籍</RouterLink>
     </div>
-    <RouterLink class="button button-primary" to="/books/new">＋ 新增書籍</RouterLink>
+    <div class="library-welcome" aria-hidden="true">
+      <p>書籍會記得，<br />那些喜歡的時光。</p>
+      <img src="/images/reading-cat.webp" width="768" height="512" alt="" />
+    </div>
   </section>
 
   <section id="library-search" class="library-tools" aria-label="書庫搜尋與篩選">
-    <label class="search-field">
+    <label class="search-field mobile-only">
       <AppIcon class="search-icon" name="search" />
       <span class="sr-only">搜尋書名、作者或 ISBN</span>
       <input
@@ -149,7 +131,7 @@ onMounted(() => {
   <p v-if="statsErrorMessage" class="feedback feedback-error" role="alert">{{ statsErrorMessage }}</p>
   <section v-else class="stats-grid" aria-label="書庫統計">
     <article class="stat-card">
-      <span class="stat-icon" aria-hidden="true">📚</span>
+      <span class="stat-icon stat-icon-books"><AppIcon name="book" /></span>
       <div>
         <p>藏書總數</p>
         <strong v-if="!isStatsLoading">{{ stats?.totalCount ?? 0 }}</strong>
@@ -157,7 +139,7 @@ onMounted(() => {
       </div>
     </article>
     <article class="stat-card">
-      <span class="stat-icon" aria-hidden="true">🏠</span>
+      <span class="stat-icon"><AppIcon name="stack" /></span>
       <div>
         <p>在家</p>
         <strong v-if="!isStatsLoading">{{ stats?.homeCount ?? 0 }}</strong>
@@ -165,7 +147,7 @@ onMounted(() => {
       </div>
     </article>
     <article class="stat-card">
-      <span class="stat-icon" aria-hidden="true">👤</span>
+      <span class="stat-icon stat-icon-borrowed"><AppIcon name="send" /></span>
       <div>
         <p>借出中</p>
         <strong v-if="!isStatsLoading">{{ stats?.borrowedCount ?? 0 }}</strong>
@@ -174,37 +156,25 @@ onMounted(() => {
     </article>
   </section>
 
-  <p v-if="remindersErrorMessage" class="feedback feedback-error" role="alert">{{ remindersErrorMessage }}</p>
-  <section
-    v-else-if="!isRemindersLoading && reminders.length"
-    class="reminders-summary"
-    aria-labelledby="reminders-summary-title"
-  >
+  <section v-if="!hasActiveFilter && !isStatsLoading && stats?.recentBooks.length" class="recent-section" aria-labelledby="recent-books-title">
     <div class="section-heading-row">
       <div>
-        <p class="eyebrow">借閱狀態</p>
-        <h2 id="reminders-summary-title">借閱提醒</h2>
-      </div>
-      <RouterLink class="text-link" to="/notifications">查看全部提醒 →</RouterLink>
-    </div>
-    <ReminderList :reminders="reminders" />
-  </section>
-
-  <section v-if="!isStatsLoading && stats?.recentBooks.length" class="recent-section" aria-labelledby="recent-books-title">
-    <div class="section-heading-row">
-      <div>
-        <p class="eyebrow">剛放進書房</p>
         <h2 id="recent-books-title">最近新增</h2>
       </div>
       <span class="section-note">最新 4 本</span>
     </div>
     <div class="recent-book-list">
       <article v-for="book in stats.recentBooks" :key="book.id" class="recent-book-card">
-        <div>
+        <div class="recent-book-cover">
+          <img v-if="book.coverUrl" :src="book.coverUrl" :alt="`${book.title} 的封面`" loading="lazy" />
+          <template v-else><AppIcon name="book" /><span>尚無封面</span></template>
+        </div>
+        <div class="recent-book-main">
           <h3 :title="book.title"><RouterLink :to="`/books/${book.id}`">{{ book.title }}</RouterLink></h3>
           <p class="book-author">{{ book.author || "未記錄作者" }}</p>
+          <p class="recent-book-location">{{ book.location || "尚未記錄位置" }}</p>
+          <StatusBadge :status="book.status" />
         </div>
-        <StatusBadge :status="book.status" />
       </article>
     </div>
   </section>
@@ -213,7 +183,7 @@ onMounted(() => {
   <div v-else-if="isLoading" class="loading-state" role="status">正在整理你的書庫⋯</div>
 
   <section v-else-if="books.length === 0" class="empty-state" aria-labelledby="empty-library-title">
-    <div class="empty-illustration" aria-hidden="true">📚</div>
+    <img class="empty-reading" src="/images/reading-girl.webp" width="768" height="512" alt="" />
     <h2 id="empty-library-title">{{ hasActiveFilter ? "找不到符合的書籍" : "目前還沒有藏書" }}</h2>
     <p v-if="hasActiveFilter">試試其他書名、作者、ISBN 或狀態篩選。</p>
     <p v-else>先登錄一本書，之後就能隨時找到它的位置。</p>
@@ -224,7 +194,6 @@ onMounted(() => {
   <section v-else class="library-results" aria-labelledby="library-results-title">
     <div class="section-heading-row">
       <div>
-        <p class="eyebrow">書房清單</p>
         <h2 id="library-results-title">全部藏書</h2>
       </div>
       <span class="section-note">{{ books.length }} 本</span>
@@ -233,7 +202,7 @@ onMounted(() => {
       <article v-for="book in books" :key="book.id" class="book-card">
         <div class="book-card-cover">
           <img v-if="book.coverUrl" :src="book.coverUrl" :alt="`${book.title} 的封面`" />
-          <span v-else aria-hidden="true">封面</span>
+          <span v-else class="cover-placeholder" aria-hidden="true"><AppIcon name="book" />尚無封面</span>
         </div>
         <div class="book-card-main">
           <h3 :title="book.title"><RouterLink :to="`/books/${book.id}`">{{ book.title }}</RouterLink></h3>

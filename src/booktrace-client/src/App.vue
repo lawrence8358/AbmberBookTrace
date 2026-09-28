@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from "vue-router";
+import { RouterLink, RouterView, useRouter } from "vue-router";
+import HeaderNotifications from "./components/HeaderNotifications.vue";
+import HeaderMenu from "./components/HeaderMenu.vue";
+import AppIcon from "./components/AppIcon.vue";
+import { librarySearch } from "./librarySearch";
+
+const router = useRouter();
 </script>
 
 <template>
@@ -43,17 +49,19 @@ import { RouterLink, RouterView } from "vue-router";
           </span>
           資源回收筒
         </RouterLink>
+        <RouterLink class="sidebar-link" to="/settings"><span class="nav-icon"><AppIcon name="settings" /></span>設定</RouterLink>
       </nav>
 
-      <RouterLink class="sidebar-add button button-primary" to="/books/new">
-        <span aria-hidden="true">＋</span>
-        新增書籍
-      </RouterLink>
+      <div class="sidebar-reading" aria-hidden="true">
+        <img src="/images/reading-girl.webp" width="768" height="512" alt="" loading="lazy" />
+        <p>收藏書籍，<br />也收藏喜歡的自己。</p>
+      </div>
     </aside>
 
     <div class="app-frame">
       <header class="site-header">
         <div class="header-inner">
+          <HeaderMenu />
           <RouterLink class="brand mobile-only" to="/books" aria-label="書蹤首頁">
             <span class="brand-mark" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -66,10 +74,20 @@ import { RouterLink, RouterView } from "vue-router";
               <small>找到我的每一本書</small>
             </span>
           </RouterLink>
-          <p class="header-context desktop-only">我的私人書房</p>
-          <RouterLink class="header-alert mobile-only" to="/notifications" aria-label="查看提醒">
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6.5 16.5h11l-1.2-1.8V10a4.3 4.3 0 0 0-8.6 0v4.7l-1.2 1.8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /><path d="M10 19h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
-          </RouterLink>
+          <form class="header-search desktop-only" role="search" aria-label="全站搜尋" @submit.prevent="router.push('/books')">
+            <label class="search-field">
+              <AppIcon class="search-icon" name="search" />
+              <input v-model="librarySearch" type="search" aria-label="搜尋書名、作者或 ISBN" placeholder="搜尋書名、作者、ISBN…" />
+            </label>
+            <button class="button button-primary" type="submit">搜尋</button>
+          </form>
+          <div class="header-personal">
+          <HeaderNotifications />
+          <div class="reader-profile" aria-label="Amber 的私人書房">
+            <span class="reader-avatar" aria-hidden="true"><img src="/images/reading-girl.webp" width="768" height="512" alt="" /></span>
+            <span class="desktop-only">Amber</span>
+          </div>
+          </div>
         </div>
       </header>
 
@@ -82,17 +100,13 @@ import { RouterLink, RouterView } from "vue-router";
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4.5 11 7.5-6 7.5 6v7.5h-5v-4h-5v4h-5V11Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
           <span>首頁</span>
         </RouterLink>
-        <RouterLink class="bottom-nav-link" to="/books#library-search">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5" stroke="currentColor" stroke-width="1.8" /><path d="m15 15 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
-          <span>搜尋</span>
+        <RouterLink class="bottom-nav-link" to="/borrowings">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 5.5h12a2 2 0 0 1 2 2v11H7a2 2 0 0 1-2-2v-11Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /><path d="M7 18.5h12M8.5 9h7M8.5 12h7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+          <span>歷史</span>
         </RouterLink>
         <RouterLink class="bottom-nav-link bottom-nav-add" to="/books/new" aria-label="新增書籍">
           <span class="bottom-nav-add-icon" aria-hidden="true">＋</span>
           <span>新增</span>
-        </RouterLink>
-        <RouterLink class="bottom-nav-link" to="/borrowings">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 5.5h12a2 2 0 0 1 2 2v11H7a2 2 0 0 1-2-2v-11Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /><path d="M7 18.5h12M8.5 9h7M8.5 12h7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
-          <span>歷史</span>
         </RouterLink>
         <RouterLink class="bottom-nav-link" to="/notifications">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6.5 16.5h11l-1.2-1.8V10a4.3 4.3 0 0 0-8.6 0v4.7l-1.2 1.8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /><path d="M10 19h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>

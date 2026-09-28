@@ -14,6 +14,7 @@ import {
 } from "../api";
 import AppIcon from "../components/AppIcon.vue";
 import BookCoverPicker from "../components/BookCoverPicker.vue";
+import ConfirmDialog from "../components/ConfirmDialog.vue";
 import StatusBadge from "../components/StatusBadge.vue";
 
 const route = useRoute();
@@ -37,6 +38,7 @@ const pastBorrowings = computed(() =>
 );
 const deleteError = ref("");
 const isDeleting = ref(false);
+const isDeleteOpen = ref(false);
 const borrowForm = reactive({
   borrowerName: "",
   dueDate: "",
@@ -158,9 +160,8 @@ async function markAsReturned() {
 }
 
 async function deleteCurrentBook() {
-  if (!book.value || !window.confirm(
-    `確定要刪除「${book.value.title}」嗎？刪除後會移至資源回收筒，30 天內可以還原。`,
-  )) {
+  isDeleteOpen.value = false;
+  if (!book.value || isDeleting.value) {
     return;
   }
 
@@ -199,7 +200,7 @@ async function loadBook() {
 async function replaceCover(file: File | null) {
   coverMessage.value = "";
   coverError.value = "";
-  if (!file || !book.value) {
+  if (!file || !book.value || isCoverSaving.value) {
     return;
   }
 
@@ -218,7 +219,7 @@ async function replaceCover(file: File | null) {
 }
 
 async function removeCover() {
-  if (!book.value?.coverUrl) {
+  if (!book.value?.coverUrl || isCoverSaving.value) {
     return;
   }
 
@@ -249,7 +250,6 @@ onMounted(loadBook);
 
     <div class="detail-header">
       <div>
-        <p class="eyebrow">書籍詳細資料</p>
         <h1 :title="book.title">{{ book.title }}</h1>
         <p class="detail-author">{{ book.author || "未記錄作者" }}</p>
       </div>
@@ -259,7 +259,7 @@ onMounted(loadBook);
           <button class="button button-secondary" type="button" @click="router.push(`/books/${book.id}/edit`)">
             修改資料
           </button>
-          <button class="button button-danger" type="button" :disabled="isDeleting" @click="deleteCurrentBook">
+          <button class="button button-danger" type="button" :disabled="isDeleting" @click="isDeleteOpen = true">
             {{ isDeleting ? "刪除中⋯" : "刪除書籍" }}
           </button>
         </div>
@@ -273,6 +273,7 @@ onMounted(loadBook);
         v-model="coverFile"
         input-id-prefix="detail-book-cover"
         :current-cover-url="book.coverUrl"
+        :disabled="isCoverSaving"
         @update:model-value="replaceCover"
         @remove="removeCover"
       />
@@ -417,5 +418,8 @@ onMounted(loadBook);
       <p class="detail-label">備註</p>
       <p class="notes-value">{{ book.notes }}</p>
     </section>
+    <ConfirmDialog v-if="isDeleteOpen" title="要刪除這本書嗎？"
+      :description="`「${book.title}」會移至資源回收筒，30 天內可以還原。`"
+      confirm-label="刪除書籍" @cancel="isDeleteOpen = false" @confirm="deleteCurrentBook" />
   </section>
 </template>

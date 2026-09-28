@@ -7,6 +7,8 @@ import LibraryPage from "./pages/LibraryPage.vue";
 import BorrowingHistoryPage from "./pages/BorrowingHistoryPage.vue";
 import NotificationsPage from "./pages/NotificationsPage.vue";
 import RecycleBinPage from "./pages/RecycleBinPage.vue";
+import SettingsPage from "./pages/SettingsPage.vue";
+import { initializeReadingPreferences } from "./readingPreferences";
 import "./style.css";
 
 const router = createRouter({
@@ -24,10 +26,12 @@ const router = createRouter({
     { path: "/borrowings", component: BorrowingHistoryPage },
     { path: "/notifications", component: NotificationsPage },
     { path: "/recycle-bin", component: RecycleBinPage },
+    { path: "/settings", component: SettingsPage },
     { path: "/books/new", component: BookFormPage },
     { path: "/books/:id/edit", component: BookFormPage },
     { path: "/books/:id", component: BookDetailPage },
   ],
 });
 
+initializeReadingPreferences();
 createApp(App).use(router).mount("#app");

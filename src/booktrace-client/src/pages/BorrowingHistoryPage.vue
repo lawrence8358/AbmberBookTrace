@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
+import PageHeading from "../components/PageHeading.vue";
+import AppIcon from "../components/AppIcon.vue";
 import {
   getBorrowingHistory,
   type BorrowingHistoryFilter,
@@ -56,14 +58,9 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="page-heading compact-heading">
-    <div>
-      <p class="eyebrow">書籍流轉紀錄</p>
-      <h1>借閱歷史</h1>
-      <p class="intro">每次借出與歸還都會保留，歷史紀錄只能查看，不能修改或刪除。</p>
-    </div>
+  <PageHeading title="借閱歷史" description="每次借出與歸還都會保留，歷史紀錄只能查看，不能修改或刪除。">
     <RouterLink class="button button-secondary" to="/notifications">查看提醒</RouterLink>
-  </section>
+  </PageHeading>
 
   <div class="filter-pills history-filters" role="group" aria-label="借閱歷史篩選">
     <button
@@ -83,7 +80,7 @@ onMounted(() => {
   <div v-else-if="isLoading" class="loading-state" role="status">正在整理借閱歷史⋯</div>
 
   <section v-else-if="records.length === 0" class="empty-state history-empty" aria-labelledby="empty-history-title">
-    <div class="empty-illustration" aria-hidden="true">📝</div>
+    <img class="empty-reading" src="/images/reading-girl.webp" width="768" height="512" alt="" />
     <h2 id="empty-history-title">目前沒有借閱紀錄</h2>
     <p>借出一本書後，這裡會留下完整的流轉紀錄。</p>
     <RouterLink class="button button-primary" to="/books">回到書庫</RouterLink>
@@ -92,7 +89,6 @@ onMounted(() => {
   <section v-else class="history-results" aria-labelledby="history-results-title">
     <div class="section-heading-row">
       <div>
-        <p class="eyebrow">只讀紀錄</p>
         <h2 id="history-results-title">借閱紀錄</h2>
       </div>
       <span class="section-note">{{ records.length }} 筆</span>
@@ -109,7 +105,7 @@ onMounted(() => {
           <div class="history-book-heading">
             <div class="history-cover" aria-hidden="true">
               <img v-if="record.coverUrl" :src="record.coverUrl" alt="" />
-              <span v-else>書</span>
+              <AppIcon v-else name="book" />
             </div>
             <div>
               <p class="book-card-label">借閱紀錄 #{{ record.id }}</p>

@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+import ConfirmDialog from "./ConfirmDialog.vue";
+import CoverViewer from "./CoverViewer.vue";
 
 const MAX_COVER_SIZE = 5 * 1024 * 1024;
 const ACCEPTED_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
@@ -8,6 +10,8 @@ const props = withDefaults(defineProps<{
   modelValue: File | null;
   currentCoverUrl?: string | null;
   inputIdPrefix?: string;
+  disabled?: boolean;
+  removalDeferred?: boolean;
 }>(), {
   currentCoverUrl: null,
   inputIdPrefix: "cover",
@@ -19,6 +23,8 @@ const emit = defineEmits<{
 }>();
 
 const coverError = ref("");
+const isViewerOpen = ref(false);
+const isRemoveOpen = ref(false);
 const localPreviewUrl = ref<string | null>(null);
 const previewUrl = computed(() => localPreviewUrl.value ?? props.currentCoverUrl);
 const galleryInputId = computed(() => `${props.inputIdPrefix}-gallery-input`);
@@ -64,6 +70,8 @@ function clearSelectedFile() {
 }
 
 function requestRemove() {
+  isRemoveOpen.value = false;
+  if (props.disabled) return;
   coverError.value = "";
   emit("remove");
 }
@@ -82,11 +90,12 @@ function validateFile(file: File): string {
 </script>
 
 <template>
-  <div class="cover-picker">
-    <div class="cover-preview" :class="{ 'cover-preview-empty': !previewUrl }">
-      <img v-if="previewUrl" :src="previewUrl" alt="書籍封面預覽" />
-      <span v-else>尚未上傳封面</span>
-    </div>
+  <fieldset class="cover-picker" :disabled="disabled">
+    <button v-if="previewUrl" class="cover-preview cover-preview-button" type="button" aria-label="全螢幕查看封面" @click="isViewerOpen = true">
+      <img :src="previewUrl" alt="書籍封面預覽" />
+      <span class="cover-preview-caption">點開看大圖</span>
+    </button>
+    <div v-else class="cover-preview cover-preview-empty"><span>尚未上傳封面</span></div>
 
     <div class="cover-picker-content">
       <p class="cover-picker-title">封面圖片</p>
@@ -121,11 +130,15 @@ function validateFile(file: File): string {
         <button v-if="modelValue" class="text-button" type="button" @click="clearSelectedFile">
           清除選擇
         </button>
-        <button v-else-if="currentCoverUrl" class="text-button text-button-danger" type="button" @click="requestRemove">
+        <button v-else-if="currentCoverUrl" class="text-button text-button-danger" type="button" @click="isRemoveOpen = true">
           移除封面
         </button>
       </div>
       <p v-if="coverError" class="field-error" role="alert">{{ coverError }}</p>
     </div>
-  </div>
+  </fieldset>
+  <CoverViewer v-if="isViewerOpen && previewUrl" :src="previewUrl" @close="isViewerOpen = false" />
+  <ConfirmDialog v-if="isRemoveOpen" title="要移除這張封面嗎？"
+    :description="removalDeferred ? '儲存修改後將移除封面。書籍資料會保留，之後可以重新上傳圖片。' : '移除後無法復原這張圖片，但書籍資料會保留。之後可以重新上傳封面。'"
+    confirm-label="移除封面" @cancel="isRemoveOpen = false" @confirm="requestRemove" />
 </template>

@@ -3,7 +3,10 @@ name: 書蹤 (BookTrace)
 description: 找到我的每一本書 —— 溫暖、清爽、帶有閱讀與手帳感的私人藏書空間
 colors:
   primary: "#8CB69B"
-  primary-hover: "#729B81"
+  primary-button: "#527E64"
+  primary-hover: "#456E57"
+  primary-ink: "#2F6647"
+  warm-ink: "#9C5E4F"
   primary-light: "#EAF3ED"
   warm-accent: "#F4A896"
   warm-accent-light: "#FDF0EC"
@@ -12,34 +15,35 @@ colors:
   bg-cream: "#FFF9F1"
   surface-card: "#FFFFFF"
   text-main: "#5B5B5B"
-  text-muted: "#8E8E8E"
+  text-muted: "#6F6A65"
   text-light: "#B0A89F"
   border-soft: "#EBE3D7"
   status-home: "#8CB69B"
   status-borrowed: "#F4A896"
   status-returned: "#8E8E8E"
-  danger: "#E57373"
+  danger: "#934C4C"
   danger-bg: "#FDEAEA"
 typography:
   display:
-    fontFamily: ""Noto Sans TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", sans-serif"
+    fontFamily: '"Noto Sans TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", sans-serif'
     fontWeight: 600
     lineHeight: 1.35
   heading:
-    fontFamily: ""Noto Sans TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", sans-serif"
+    fontFamily: '"Noto Sans TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", sans-serif'
     fontWeight: 600
     lineHeight: 1.45
   body:
-    fontFamily: ""Noto Sans TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", sans-serif"
+    fontFamily: '"Noto Sans TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", sans-serif'
     fontWeight: 400
     lineHeight: 1.6
   caption:
-    fontFamily: ""Noto Sans TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", sans-serif"
+    fontFamily: '"Noto Sans TC", "Microsoft JhengHei", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", sans-serif'
     fontWeight: 400
     lineHeight: 1.4
 rounded:
   sm: "6px"
   md: "10px"
+  search: "12px"
   lg: "16px"
   xl: "24px"
   full: "9999px"
@@ -52,7 +56,7 @@ spacing:
   xxl: "48px"
 components:
   button-primary:
-    backgroundColor: "{colors.primary}"
+    backgroundColor: "{colors.primary-button}"
     textColor: "#FFFFFF"
     rounded: "{rounded.md}"
     padding: "10px 20px"
@@ -60,7 +64,7 @@ components:
     backgroundColor: "{colors.primary-hover}"
   button-secondary:
     backgroundColor: "{colors.surface-card}"
-    textColor: "{colors.primary}"
+    textColor: "{colors.primary-ink}"
     rounded: "{rounded.md}"
     padding: "10px 20px"
   button-danger:
@@ -75,16 +79,17 @@ components:
   input-search:
     backgroundColor: "{colors.surface-card}"
     textColor: "{colors.text-main}"
-    rounded: "{rounded.full}"
-    padding: "14px 24px"
+    rounded: "{rounded.search}"
+    padding: "10px 52px 10px 48px"
+    height: "48px"
   badge-home:
     backgroundColor: "{colors.primary-light}"
-    textColor: "{colors.primary}"
+    textColor: "{colors.primary-ink}"
     rounded: "{rounded.full}"
     padding: "4px 12px"
   badge-borrowed:
     backgroundColor: "{colors.warm-accent-light}"
-    textColor: "{colors.warm-accent}"
+    textColor: "{colors.warm-ink}"
     rounded: "{rounded.full}"
     padding: "4px 12px"
 ---
@@ -117,16 +122,19 @@ components:
 |---|---|---|
 | **主背景（Cream）** | `#FFF9F1` | 全站主要背景色，提供紙張般的溫潤暖意 |
 | **卡片背景（Surface）** | `#FFFFFF` | 卡片、輸入框等前景容器，與奶油底形成微對比 |
-| **主色（Primary Sage）** | `#8CB69B` | 主要按鈕、Logo重點、選中狀態、在館狀態 |
-| **主色懸停（Primary Hover）** | `#729B81` | 主按鈕 Hover 與 Active 狀態 |
+| **主色（Primary Sage）** | `#8CB69B` | 品牌基調、選中邊框與狀態色彩 |
+| **主按鈕（Primary Button）** | `#527E64` | 搭配白字的主要操作底色，保留綠色調並提高文字對比 |
+| **主色懸停（Primary Hover）** | `#456E57` | 主按鈕 Hover 狀態 |
+| **深綠文字（Primary Ink）** | `#2F6647` | 綠色功能文字與「在家」狀態文字 |
+| **深珊瑚文字（Warm Ink）** | `#9C5E4F` | 「借出中」狀態文字 |
 | **主色淺底（Primary Light）** | `#EAF3ED` | 「在家」狀態標籤背景、選取背景 |
 | **暖色警示（Coral Accent）** | `#F4A896` | 「借出中」狀態標籤、催還備註、重點提醒 |
 | **暖色淺底（Coral Light）** | `#FDF0EC` | 「借出中」標籤背景 |
 | **輔助冷色（Soft Blue）** | `#A7C7E2` | 輔助標籤、出版社資訊、次要分類 |
 | **主文字（Text Main）** | `#5B5B5B` | 書名、主要文字，避免全黑 `#000000` 造成的過強反差 |
-| **次要文字（Text Muted）** | `#8E8E8E` | 作者、位置、日期等中階資訊，以及已歸還狀態標籤 |
+| **次要文字（Text Muted）** | `#6F6A65` | 作者、位置、日期等中階資訊，以及已歸還狀態標籤 |
 | **邊框線（Border Soft）** | `#EBE3D7` | 溫和的格線與卡片細邊框 |
-| **危險操作（Danger）** | `#E57373` | 刪除書籍按鈕文字與警告邊框 |
+| **危險操作（Danger）** | `#934C4C` | 刪除文字與錯誤訊息；淡紅邊框為 `#E57373` |
 | **危險淺底（Danger Light）** | `#FDEAEA` | 刪除按鈕背景 |
 
 ---
@@ -156,7 +164,7 @@ components:
 
 字族一致，層次靠字級與字重區分：
 
-- **Page Title**: `28px ~ 36px` / 600
+- **Page Title**: 桌面 `28px`、手機 `24px` / 600
 - **Section Heading**: `20px ~ 24px` / 600
 - **Book Title (Card)**: `16px ~ 19px` / 600
 - **Body & Controls**: `14px ~ 16px` / 400
@@ -171,22 +179,28 @@ components:
 ### PC 電腦版佈局
 
 - **左右雙欄架構**：
-  - **左側固定導覽列（Sidebar，寬度 240px）**：包含品牌 Logo、導航選單（首頁、我的書庫、新增書籍、設定）。
+  - **左側固定導覽列（Sidebar，寬度 240px）**：品牌下方 24px 即為「我的書庫、借閱歷史、提醒、資源回收筒、設定」。不放新增書籍按鈕；新增入口保留在書庫內容區。
+  - **側欄插畫**：閱讀女孩置於底部，使用側欄完整寬度；高度不足時側欄可捲動，不裁掉角色。
+  - **頂部橫幅**：桌面左側為搜尋框與搜尋按鈕，右側有提醒鈴鐺與圓形閱讀女孩頭像、「小書迷」稱呼。頭像為靜態品牌標記，不是登入或帳號選單。
   - **主要內容區（Main Content）**：
     - 頂部置中或顯眼的快速搜尋列。
     - 首頁統計卡（藏書總數 128 本、在家 125 本、借出中 3 本）。
     - 內容區採用卡片網格（Card Grid），每列 3～4 欄展示書籍。
-  - **右側或懸浮操作**：快速新增與批次整理。
+  - **功能頁**：新增、修改、借閱歷史、提醒、回收筒、設定共用 `PageHeading`。書庫與共用標題一律頂端對齊，桌面最小高度均為 132px，避免依插畫或文案高度垂直置中而跳動。詳情頁保留返回連結與書名，1200px 以上封面與資料分欄。
 
 ### 手機版佈局
 
 - **單欄直向流動佈局**：
-  - **頂部 Header**：輕量化 Logo + 溫暖問候語。
-  - **快速搜尋區**：常駐頂部的大圓角搜尋框，支援即時比對。
+  - **頂部 Header**：左側功能選單圖示、中央品牌 Logo、右側提醒鈴鐺與圓形頭像。功能選單含設定，底部不放設定 Tab。
+  - **快速搜尋區**：書庫內容頂部的搜尋框，支援即時比對；不另設搜尋 Tab。
   - **狀態快篩分頁標籤**：`[ 全部 ]` `[ 在家 ]` `[ 借出中 ]` 水平滑動 Pills。
   - **單欄書籍列表**：每本書以橫向卡片呈現（左側封面/佔位圖，右側書名、作者、位置與狀態 Badge）。
+  - **最近新增**：同樣使用單欄橫向卡片，封面為 56 × 80px，保留作者、位置與狀態；統計維持三欄緊湊排列，隱藏裝飾圖示。
   - **底部固定導覽列（Bottom Navigation Bar）**：
-    - 首頁 / 搜尋 / 新增（中央突起高亮）/ 書庫 / 設定。
+    - 固定五個等寬 Tab：**首頁 / 歷史 / 新增 / 提醒 / 回收筒**。
+    - 新增位於第三格正中央，44px 綠色圓形按鈕微微上提，左右各兩個 Tab。
+    - 桌面導覽在 1024px 以下切換成底部導覽；手機卡片與表單在 760px 以下採單欄，預留底部安全區與操作空間。
+  - **穩定版面**：手機標題區同樣頂端對齊；頁面切換不使用全域平滑捲動，保留固定捲軸空間，減少垂直和水平跳動。
 
 ### 防止內容撐爆版面 (Overflow Rules)
 
@@ -219,13 +233,13 @@ components:
 全站大量採用自然柔和的圓角語彙：
 
 - **大圓角膠囊 (Pill / Full `9999px`)**：
-  - 頂部全站搜尋框（Search Bar）
   - 狀態標籤（● 在家 / ● 借出中 / ● 已歸還）
   - 篩選按鈕（Filter Chips）
 - **中大圓角 (`12px ~ 16px`)**：
+  - 搜尋框（12px 圓角長方形）
   - 書籍資訊卡（Book Cards）
-  - 書籍封面圖（Book Covers）
-  - 模態對話框（Modals / Dialogs）
+  - 功能頁表單、資料與歷史卡片使用 12px 圓角。
+  - 書封使用較小的書脊圓角（左 4px、右 7–8px）；不把封面裁成大圓角圖塊。
 - **標準圓角 (`8px ~ 10px`)**：
   - 操作按鈕（Primary / Secondary Buttons）
   - 表單輸入框（Form Inputs）
@@ -235,64 +249,82 @@ components:
 ## Components
 
 ### 1. 搜尋列 (Search Input)
-- 外觀：大圓角 Pill 造型、米白/白底、左側放大鏡 Icon、右側清除按鈕。
+- 外觀：12px 圓角長方形、白底、最小高度 48px，左側放大鏡 Icon、右側清除按鈕。
 - 佔位提示（Placeholder）：`搜尋書名、作者、ISBN...`
-- Focus：柔和綠細邊框（`1.5px solid #8CB69B`）與輕微柔光擴散。
+- Focus：柔和綠細邊框（`1px solid #8CB69B`）與 3px 淺綠柔光擴散。
+- 桌面放在 Header，44px 高，搭配右側搜尋按鈕；手機放在書庫標題下方，48px 高。兩者共用搜尋字串，不在桌面重複顯示兩個搜尋框。
+
+#### 通知彈窗與功能選單
+
+- 鈴鐺開啟原生非模態 Popover，不直接換頁；每次開啟重新載入目前提醒。
+- 桌面通知寬度至多 440px、16px 圓角；手機左右各留 16px，可在視窗內捲動。
+- 提醒列表保留到期／逾期標示、書名連結、借阅人與日期；首頁不再重複放提醒區塊。
+- 無通知時用貓咪插畫搭配「目前沒有需要處理的提醒」；另備載入中與失敗重試狀態。
+- 支援關閉按鈕、Esc、點外部及導航後關閉。Esc 關閉通知會將焦點還給鈴鐺。
+- 手機功能選單使用同一種紙白浮層，設定入口放在列表末端。
+
+#### 閱讀顯示設定
+
+- 提供標準／較大字體；較大模式內文 18px、標題 30／24／20px，仍繼承唯一字族。
+- 偏好存在目前瀏覽器；無法保存時仍套用本次顯示並提供說明，不需要登入。
 
 ### 2. 狀態標籤 (Status Badge)
 - **在家 (HOME)**：
   - 背景：`#EAF3ED`
-  - 文字與圓點：`#8CB69B`
+  - 文字與圓點：`#2F6647`
   - 內容：`● 在家`
 - **借出中 (BORROWED)**：
   - 背景：`#FDF0EC`
-  - 文字與圓點：`#F4A896`
+  - 文字與圓點：`#9C5E4F`
   - 內容：`● 借出中`
 - **已歸還 (RETURNED)**：
   - 背景：`#F0F0F0`
-  - 文字與圓點：`#8E8E8E`
+  - 文字：`#6F6A65`
   - 內容：`● 已歸還`
 
 ### 3. 書籍資訊卡片 (Book Card)
 - 佈局：
   - 左側/上方：精緻書籍封面或溫暖手繪感書本 Icon。
   - 右側/主體：
-    - 書名（Serif 粗體，單行截斷；超出以 `…` 呈現，並以 `title` 屬性保留完整書名）
+    - 書名（繼承全站字族、600 字重，單行截斷；超出以 `…` 呈現，並以 `title` 屬性保留完整書名）
     - 作者（次要文字）
     - 位置資訊：`📍 房間書櫃 · 第二層左邊`（重要醒目標籤）
     - 狀態標籤（右下或右上）
-- 借出狀態特別呈現：若為「借出中」，清楚標示 `借給：小美 (2026/09/15)`。
+- 借出狀態由文字標籤表示；借閱人與日期可在詳情頁及借閱歷史查看。
 
 ### 4. 統計資訊卡 (Stat Counter Card)
-- 呈現數字與說明：`📚 我的藏書 128`、`🏠 在家 125`、`👤 借出中 3`。
-- 大字號數字搭配手繪風圖標，字體溫潤。
+- 呈現數字與說明：藏書總數、在家、借出中；數字由實際資料決定。
+- 大字號數字搭配 `AppIcon` 的 `book`、`stack`、`send` 線條圖示，分別使用柔和藍、綠、珊瑚色；不再使用 emoji 統計圖示。
 
 ### 5. 操作按鈕 (Buttons)
-- **主要操作 (Primary)**：鼠尾草綠背景、白字、圓角、微陰影（用於「新增書籍」、「借出給同學」、「儲存」）。
+- **主要操作 (Primary)**：深鼠尾草綠 `#527E64` 背景、白字、10px 圓角、微陰影，懸停為 `#456E57`（用於「新增書籍」、「借出給同學」、「儲存」）。
 - **次要操作 (Secondary)**：白底、綠色外框與綠字（用於「編輯資料」、「返回」）。
-- **危險操作 (Danger)**：淡粉紅背景 `#FDEAEA`、紅色文字 `#E57373`（用於 PC 端「刪除書籍」，避免過於突兀誘發誤按）。
+- **危險操作 (Danger)**：淡粉紅背景 `#FDEAEA`、深紅文字 `#934C4C`（用於 PC 端「刪除書籍」，避免過於突兀誘發誤按）。
 
 ---
 
-## Iconography
+### 6. 圖示與插畫
 
 圖示分成兩種角色，不要互相取代：
 
-### 1. 功能性圖示 (Functional Icons)
+#### 功能性圖示 (Functional Icons)
 
 介面上表達操作或資料意義的小圖示，一律使用元件 `components/AppIcon.vue` 的內嵌 SVG：
 
-- 規格：`viewBox="0 0 24 24"`、線條式（`fill="none"`、`stroke-width: 1.8`、圓端點）、顏色一律 `currentColor`，尺寸預設 `1.05em` 跟著文字大小縮放。
-- 目前提供：`location`（書籍位置）、`search`（搜尋框）、`chevron`（展開／收合）、`clock`（今天到期）、`alert`（逾期）。
+- 規格：`viewBox="0 0 24 24"`、線條式（`fill="none"`、一般線寬 1.8，新閱讀圖示線寬 1.6、圓端點）、顏色一律 `currentColor`，尺寸預設 `1.05em` 跟著文字大小縮放。
+- 目前提供：`location`（書籍位置）、`search`（搜尋框）、`chevron`（展開／收合）、`clock`（今天到期）、`alert`（逾期），以及 `book`（藏書／無封面）、`stack`（在家）、`send`（借出中）。
 - 新增圖示時加在 `AppIcon.vue` 的 `name` 聯集裡，不要在頁面裡直接寫 SVG，也不要用 `⌖`、`⌕`、`›` 這類符號字元充當圖示（各平台字型差異大且無法對齊）。
 - 不額外載入 icon font：專案已採內嵌 SVG，集中在單一元件即可達到一致性，也省下一份字型檔的下載。
 
-### 2. 情境插畫 (Illustrative Icons)
+#### 情境插畫 (Illustrative Icons)
 
-帶有手帳溫度、用來營造氣氛的圖像，維持 emoji／插畫風格，不要換成線條 SVG：
+帶有手帳溫度、用來營造氣氛的圖像，採透明底水彩插畫，與功能性線條圖示各司其職：
 
-- 統計資訊卡：`📚 藏書總數`、`🏠 在家`、`👤 借出中`。
-- 空狀態插圖：`📚`、`🌿`、`📝` 等大尺寸圖像。
+- `public/images/reading-cat.webp`：書庫迎賓區的貓咪與書本；手機縮為 100px 寬並隱藏旁邊的裝飾短句。
+- `public/images/reading-girl.webp`：桌面側欄底部的閱讀女孩，依側欄完整寬度縮放，手機不呈現側欄；另用於各頁空狀態與頂部圓形頭像。
+- 兩張圖片皆為 768 × 512px、保留透明背景與原始比例。裝飾圖片使用空 `alt` 並置於 `aria-hidden` 區域；女孩延後載入。文案以 HTML 呈現，不烙進圖片。
+- 書庫、借閱歷史、提醒、回收筒的空狀態使用閱讀女孩，寬度不超過 260px；真實書封維持原圖，無封面時使用書本線條圖示或明確文字，不以裝飾插畫冒充書封。
+- 字句維持 HTML，頭像只透過圓形容器取景；所有裝飾圖都用空 `alt`。來源 PNG 與完整提示位於 `docs/design/assets/`。
 
 ---
 
@@ -312,3 +344,7 @@ components:
 - **DON'T** 讓過長的書名把同一列的按鈕或狀態標籤擠變形；書名一律單行截斷，操作區維持不可壓縮。
 - **DON'T** 讓「刪除」按鈕以大紅高對比奪走視覺重心，增加誤觸風險。
 - **DON'T** 在任何元件裡另外宣告 `font-family`，也不要混用襯線體與黑體。
+
+### 封面互動
+
+封面可點開佔滿視窗的檢視器，以奶油白背景呈現完整圖片。支援雙指縮放、放大後拖曳、雙擊切換、滑鼠滾輪及鍵盤加減鍵；不設 Header／Footer 工具列，僅保留右上角浮動關閉鈕，讓圖片使用完整視窗。關閉或 Esc 返回原頁。移除封面使用奶油白、圓角與暖紅操作鈕的自訂確認視窗，預設焦點放在取消，禁止使用系統 alert／confirm。修改頁說明儲存後才生效。

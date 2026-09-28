@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { createBook, getBook, removeBookCover, updateBook, uploadBookCover } from "../api";
 import BookCoverPicker from "../components/BookCoverPicker.vue";
+import PageHeading from "../components/PageHeading.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -100,13 +101,7 @@ onMounted(() => {
   <section v-if="isLoading" class="loading-state" role="status">正在載入書籍資料⋯</section>
   <section v-else-if="formError && isEdit && !form.title" class="feedback feedback-error" role="alert">{{ formError }}</section>
   <section v-else class="form-page">
-    <div class="page-heading compact-heading">
-      <div>
-        <p class="eyebrow">{{ isEdit ? "整理書房資料" : "把新書放進書房" }}</p>
-        <h1>{{ isEdit ? "修改書籍" : "新增書籍" }}</h1>
-        <p class="intro">書名是唯一必填欄位，其餘資訊可以之後再補。</p>
-      </div>
-    </div>
+    <PageHeading :title="isEdit ? '修改書籍' : '新增書籍'" description="書名是唯一必填欄位，其餘資訊可以之後再補。" />
 
     <form class="book-form" @submit.prevent="saveBook">
       <div v-if="formError" class="feedback feedback-error" role="alert">{{ formError }}</div>
@@ -143,6 +138,8 @@ onMounted(() => {
         <BookCoverPicker
           :model-value="coverFile"
           :current-cover-url="currentCoverUrl"
+          :disabled="isSaving"
+          removal-deferred
           :input-id-prefix="isEdit ? 'edit-book-cover' : 'new-book-cover'"
           @update:model-value="handleCoverSelected"
           @remove="removeCurrentCover"

@@ -38,8 +38,34 @@ test("desktop user can add, replace, remove, and persist a book cover", async ({
   const replacementCoverUrl = await page.locator(".cover-card img").getAttribute("src");
   expect(replacementCoverUrl).not.toBe(firstCoverUrl);
 
+  const openCover = page.getByRole("button", { name: "全螢幕查看封面", exact: true });
+  await openCover.click();
+  const viewer = page.getByRole("dialog", { name: "全螢幕封面" });
+  await expect(viewer.getByAltText("完整書籍封面")).toBeVisible();
+  const stage = viewer.locator(".cover-viewer-stage");
+  await stage.dblclick();
+  await expect(stage).toHaveClass(/is-zoomed/);
+  await stage.dblclick();
+  await expect(stage).not.toHaveClass(/is-zoomed/);
+  const bounds = await stage.boundingBox();
+  expect(bounds!.height).toBe(page.viewportSize()!.height);
+  await page.keyboard.press("Escape");
+  await expect(openCover).toBeFocused();
+
+  let removeRequests = 0;
+  page.on("request", request => {
+    if (request.method() === "DELETE" && request.url().endsWith("/cover")) removeRequests++;
+  });
+  await page.getByRole("button", { name: "移除封面", exact: true }).click();
+  const confirmation = page.getByRole("dialog", { name: "要移除這張封面嗎？" });
+  await expect(confirmation.getByRole("button", { name: "取消" })).toBeFocused();
+  await confirmation.getByRole("button", { name: "取消" }).click();
+  expect(removeRequests).toBe(0);
+  await expect(cover).toBeVisible();
   await page.getByRole("button", { name: "移除封面" }).click();
+  await confirmation.getByRole("button", { name: "移除封面", exact: true }).click();
   await expect(page.getByText("封面已移除。", { exact: true })).toBeVisible();
+  expect(removeRequests).toBe(1);
   await expect(page.locator(".cover-card img")).toHaveCount(0);
 
   await page.reload();
