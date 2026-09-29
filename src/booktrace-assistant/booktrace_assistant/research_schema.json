@@ -1,0 +1,102 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["ready", "needs_clarification", "not_found", "error"]
+    },
+    "summary": { "type": "string" },
+    "book": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" },
+        "author": { "type": "string" },
+        "isbn": { "type": "string" },
+        "publisher": { "type": "string" },
+        "category": { "type": "string" },
+        "publicationDate": { "type": "string" },
+        "coverUrl": { "type": "string" },
+        "existingBookId": { "type": ["integer", "null"] },
+        "sources": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "unknownFields": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": [
+        "title",
+        "author",
+        "isbn",
+        "publisher",
+        "category",
+        "publicationDate",
+        "coverUrl",
+        "existingBookId",
+        "sources",
+        "unknownFields"
+      ]
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" },
+          "isbn": { "type": "string" },
+          "publicationYear": { "type": "string" },
+          "pages": { "type": "string" },
+          "binding": { "type": "string" },
+          "coverDescription": { "type": "string" }
+        },
+        "required": [
+          "title",
+          "isbn",
+          "publicationYear",
+          "pages",
+          "binding",
+          "coverDescription"
+        ]
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "userProvided": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "purchaseDate": { "type": "string" },
+        "location": { "type": "string" },
+        "detailedLocation": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["purchaseDate", "location", "detailedLocation", "notes"]
+    },
+    "requestedActions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "wantsToSave": { "type": "boolean" },
+        "correctExisting": { "type": "boolean" },
+        "replaceCover": { "type": "boolean" }
+      },
+      "required": ["wantsToSave", "correctExisting", "replaceCover"]
+    }
+  },
+  "required": [
+    "status",
+    "summary",
+    "book",
+    "candidates",
+    "questions",
+    "userProvided",
+    "requestedActions"
+  ]
+}

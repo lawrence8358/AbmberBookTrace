@@ -1,0 +1,101 @@
+# BookTrace 小幫手
+
+給不熟悉指令列的使用者使用。畫面就像一般聊天網站：打書名／ISBN，或選擇、拖入、直接貼上書本照片，程式便會呼叫本機的 Codex CLI 或 Claude CLI，依 [查書規則](booktrace_assistant/rules.md) 查證版本、資料來源與封面，經使用者確認後寫入 [BookTrace](https://booktrace.primeeagle.net/)。
+
+## 開始使用
+
+1. 雙擊 [啟動 BookTrace 小幫手.cmd](啟動%20BookTrace%20小幫手.cmd)。
+2. 瀏覽器會自動開啟聊天畫面。直接輸入書名、ISBN 或一句自然語言。
+3. 圖片可以按「＋」選擇、拖進輸入框，或直接按 `Ctrl+V` 貼上；最多四張。若某張就是正面封面，按圖片下方的「這張是封面」。
+4. 按 Enter 或右側箭頭送出。查證階段只會查詢，不會改動書架。
+   查詢時對話中會出現「查證過程」，點開可以看到 AI 目前在搜尋什麼、開了哪些網頁；輸入框上方也有「查看進度」和已進行的時間。完成後會顯示總步數、耗時與大約花費。
+5. 查證完成後，對話中會顯示書籍卡片。看過版本與封面後，按「加入 BookTrace」並確認。
+
+平常不需要看到任何技術選項。若想更換 Codex／Claude 或模型，按右上角的模型名稱或齒輪即可；選擇會記住，下次開啟沿用。
+
+## 關閉
+
+- 雙擊 [關閉 BookTrace 小幫手.cmd](關閉%20BookTrace%20小幫手.cmd)；或按右上角齒輪 →「結束小幫手」。
+- 只關掉瀏覽器分頁也可以：約 5 分鐘後會自動結束（若還在查詢或寫入，會等做完才結束）。
+- 小幫手已在執行時再雙擊啟動檔，只會重新打開同一個畫面，不會開第二個。
+
+## 運作方式
+
+程式採兩階段流程：
+
+1. **查證（唯讀）**：把 [`rules.md`](booktrace_assistant/rules.md) 全文放進提示，交給 Claude／Codex CLI。AI 只能使用網頁搜尋、讀取圖片與 BookTrace 的 `find_book`／`get_book`，回傳符合 [`research_schema.json`](booktrace_assistant/research_schema.json) 的結果。修改 `rules.md` 即可調整 AI 查書的方式。
+2. **保存**：使用者按「加入 BookTrace」並再次確認後，介面才以 [`enrich_book.py`](booktrace_assistant/enrich_book.py) 新增或補齊資料、上傳封面，並以 `get_book` 讀回、下載封面比對驗證。
+
+## 模型與費用
+
+- 預設助理為 Claude（兩者都已安裝時）；最後一次在設定中選的助理與模型會記住。
+- Codex 預設：`gpt-5.6-luna`（低費率）；可切換 `gpt-5.6-terra`、`gpt-5.6-sol`、`gpt-6-astra` 或 CLI 預設。以 ChatGPT 帳號登入 Codex 時，可用模型以 `codex debug models` 列出的為準。
+- Claude 預設：`claude-sonnet-5`（平衡）；可切換 Haiku 4.5（最省費用，但實測會從封面照片認錯版本）、Opus、Fable 或 CLI 預設。
+- 「思考深度」可選自動、低、中、高、很高、最高（對應 Claude `--effort`、Codex `model_reasoning_effort`）。越深越仔細，但越慢、越花錢；右上角會顯示目前的模型與思考深度。
+- 下拉欄位可直接輸入帳號實際可用的模型 ID。若模型不可用，請改選「使用 CLI 預設」。
+
+模型可用性依帳號方案而異。介面的預設選擇依 [OpenAI 模型選擇說明](https://developers.openai.com/api/docs/guides/model-selection) 與 [Claude 模型一覽](https://platform.claude.com/docs/en/models/overview) 設定。
+
+## 自動重試
+
+「自動等待並重試」預設開啟。遇到下列可恢復狀況時，輸入框上方會顯示倒數，並持續重試到完成或使用者按停止：
+
+- 5 小時用量窗或速率限制（429）
+- 服務忙碌、502／503／504
+- 暫時網路中斷或逾時
+
+登入失敗、模型不存在、圖片格式錯誤、版本歧義等需要人處理的問題不會無限重試。BookTrace 保存若因暫時網路問題中斷，也會沿用 helper 的查重流程安全重試。
+
+## 第一次使用前
+
+電腦需有 Python 3，以及至少一個已安裝並登入的 CLI：
+
+```powershell
+codex login
+```
+
+或：
+
+```powershell
+claude auth
+```
+
+BookTrace MCP 的網址（`https://booktrace.primeeagle.net/mcp`）由程式直接帶給 CLI，不需要另外設定 MCP。
+
+介面只使用 Python 標準函式庫，啟動後在本機瀏覽器開啟（僅限 127.0.0.1，並以一次性 token 保護）。
+
+## 疑難排解
+
+- 「未偵測到 CLI」：確認 `codex --version` 或 `claude --version` 能在命令提示字元執行。
+- 「尚未登入」：先執行上方登入命令，再重開小幫手。
+- 「需要你確認版本」：依畫面問題補上封底 ISBN、出版年或版權頁資訊，再按一次查證。
+- 「缺少可信封面」：加入單本正面封面照並勾選可作為封面，或補充版本線索後重新查證。
+
+## 單獨使用保存工具
+
+`enrich_book.py` 只用 Python 標準函式庫，也可以不透過介面直接執行（例如其他代理人已查好資料時）：
+
+```powershell
+python booktrace_assistant/enrich_book.py --endpoint https://booktrace.primeeagle.net/mcp --metadata book.json --cover cover.jpg
+```
+
+- `book.json` 至少包含 `title` 與實際查證過的 `sources` 網址陣列；其餘欄位見 BookTrace MCP 的 `add_book`。
+- 預設只補空欄且保留已有封面；`--correct` 允許更正既有值，`--replace-cover` 替換封面。
+- 若保存資料後封面上傳失敗，會回報書籍 ID，可用 `--book-id` 重試，不會建立第二本。
+
+## 開發驗證
+
+在這個資料夾執行：
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+| 位置 | 內容 |
+| --- | --- |
+| `booktrace_assistant/webapp.py` | 本機 HTTP 伺服器、對話狀態、設定記憶、單一實例與自動結束 |
+| `booktrace_assistant/runner.py` | 組 Claude／Codex CLI 指令、解析進度事件、自動重試 |
+| `booktrace_assistant/core.py` | 查證提示、結果解析與驗證 |
+| `booktrace_assistant/saver.py`、`enrich_book.py` | 確認後寫入 BookTrace 並讀回驗證 |
+| `booktrace_assistant/web/` | 聊天介面 |
+| `*.cmd` | 雙擊啟動／關閉（須維持純 ASCII 與 CRLF 換行） |

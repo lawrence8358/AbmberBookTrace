@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "booktrace": {
+      "type": "http",
+      "url": "https://booktrace.primeeagle.net/mcp"
+    }
+  }
+}

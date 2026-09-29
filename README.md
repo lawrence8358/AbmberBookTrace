@@ -78,22 +78,16 @@ API 的 `appsettings.json` 預設開啟 MCP：
 
 `add_book` 在資料庫交易內檢查重複：ISBN 忽略空白與連字號，或書名與作者去除頭尾空白且忽略大小寫；符合時回傳 `created=false` 與既有書籍，不覆寫內容。沒有提供作者時，只與同樣未填作者的書名配對。回收筒內書籍不列入查詢或重複檢查。不同 ISBN 的同名書仍需人工核對版本，不能直接將另一版本的資訊套用到既有書籍。
 
-MCP 支援補齊資料和上傳圖片；照片辨識及網路查書由呼叫端技能執行。回傳的 `coverUrl` 相對於同一站台。Docker 可以用 `Mcp__Enabled=false` 關閉 MCP，圖片掛載方式見上節。目前與原 API 相同未內建登入驗證，遠端部署可由有驗證的反向代理或私人網路提供。
+MCP 支援補齊資料和上傳圖片；照片辨識及網路查書由呼叫端（例如 BookTrace 小幫手）執行。回傳的 `coverUrl` 相對於同一站台。Docker 可以用 `Mcp__Enabled=false` 關閉 MCP，圖片掛載方式見上節。目前與原 API 相同未內建登入驗證，遠端部署可由有驗證的反向代理或私人網路提供。
 
-## 外部查書建檔技能範例
+## BookTrace 小幫手（查書建檔工具）
 
-供外部代理人安裝使用的技能範例位於 [src/booktrace-enrich-skill/SKILL.md](src/booktrace-enrich-skill/SKILL.md)，可輸入：
+[src/booktrace-assistant](src/booktrace-assistant/README.md) 是給不熟悉指令列的人使用的本機聊天介面：雙擊啟動後，輸入書名、ISBN 或貼上書本照片，它會呼叫本機的 Claude／Codex CLI 查證版本與封面，經你確認後才透過 MCP 查重、補齊資料並上傳封面。購入日期只使用你提供的日期，不會猜成今天。
 
-> 使用 $booktrace-enrich，幫我把《書名》加入書蹤，包含封面。
-
-也可附上書本照片，請技能辨識後建檔。技能優先查博客來，網站無法讀取時改用出版社或其他書店；核對版本後，透過 MCP 查重、補齊資料並上傳封面。購入日期只使用你提供的日期或收據，不會猜成今天。
-
-隨附 Python 3 腳本只用標準函式庫，支援沒有原生 MCP 連線的環境，且強制要求圖片檔、查證來源和有效日期：
+隨附的保存工具 `enrich_book.py` 只用 Python 3 標準函式庫，也可單獨執行，強制要求圖片檔、查證來源和有效日期：
 
 ```bash
-python src/booktrace-enrich-skill/scripts/enrich_book.py --endpoint https://booktrace.primeeagle.net/mcp --metadata book.json --cover cover.jpg
+python src/booktrace-assistant/booktrace_assistant/enrich_book.py --endpoint https://booktrace.primeeagle.net/mcp --metadata book.json --cover cover.jpg
 ```
 
-`book.json` 使用上表欄位加上 `sources`（查證網址陣列）；完整流程與格式見技能。預設只補空欄且保留已有封面，要求替換封面時使用 `--replace-cover`。腳本會讀回資料並下載封面驗證；若保存資料後封面上傳失敗，會回報書籍 ID，可用 `--book-id` 重試。
-
-已在隔離書架實測查書、實際封面辨識與上傳、重跑補齊不重複、未知購入日期保留空白、無效圖片拒絕；另有後端整合測試和前端日期／封面流程測試。
+`book.json` 使用上表欄位加上 `sources`（查證網址陣列）。預設只補空欄且保留已有封面，要求替換封面時使用 `--replace-cover`。腳本會讀回資料並下載封面驗證；若保存資料後封面上傳失敗，會回報書籍 ID，可用 `--book-id` 重試。使用方式、模型與費用設定見 [小幫手說明](src/booktrace-assistant/README.md)。

@@ -1,0 +1,5 @@
+.booktrace-ui-work/
+.booktrace-ui-settings.json
+__pycache__/
+*.pyc
+

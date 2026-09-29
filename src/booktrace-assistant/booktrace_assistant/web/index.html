@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BookTrace 小幫手</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <button id="new-chat" class="icon-text-button" type="button" title="開始新對話">
+          <span aria-hidden="true">＋</span><span>新對話</span>
+        </button>
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">B</span>
+          <div>
+            <strong>BookTrace 小幫手</strong>
+            <small>找書、認封面、加入書架</small>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button id="model-badge" class="model-badge" type="button" title="模型設定">模型設定</button>
+          <button id="open-settings" class="round-button" type="button" aria-label="設定" title="設定">⚙</button>
+        </div>
+      </header>
+
+      <main id="chat" class="chat" aria-live="polite">
+        <section id="welcome" class="welcome">
+          <div class="welcome-icon" aria-hidden="true">B</div>
+          <h1>想找哪一本書？</h1>
+          <p>打書名、ISBN，或直接貼上一張書本照片。</p>
+          <div class="suggestions">
+            <button type="button" data-prompt="幫我查這本書的正確版本">查正確版本</button>
+            <button type="button" data-prompt="幫我找這本書，找到後讓我確認再加入書架">找書並準備加入</button>
+            <button type="button" data-prompt="這張照片裡是哪一本書？">從照片認書</button>
+          </div>
+        </section>
+        <div id="messages" class="messages"></div>
+      </main>
+
+      <footer class="composer-wrap">
+        <div id="status-bar" class="status-bar hidden">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="status-text">正在處理…</span>
+          <span id="status-elapsed" class="status-elapsed"></span>
+          <div class="status-actions">
+            <button id="show-progress" class="show-progress hidden" type="button">查看進度</button>
+            <button id="cancel-job" type="button">停止</button>
+          </div>
+        </div>
+        <div id="drop-zone" class="composer">
+          <div id="attachment-list" class="attachment-list"></div>
+          <div class="composer-row">
+            <button id="attach-button" class="composer-icon" type="button" aria-label="加入圖片" title="加入圖片">＋</button>
+            <input id="file-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden />
+            <textarea id="message-input" rows="1" placeholder="輸入書名，或直接貼上圖片…" aria-label="訊息"></textarea>
+            <button id="send-button" class="send-button" type="button" aria-label="送出" title="送出">↑</button>
+          </div>
+        </div>
+        <p class="composer-hint">Enter 送出 · Shift + Enter 換行 · 可貼上或拖入圖片</p>
+      </footer>
+    </div>
+
+    <dialog id="settings-dialog" class="dialog settings-dialog">
+      <form method="dialog">
+        <div class="dialog-head">
+          <div>
+            <h2>設定</h2>
+            <p>選好後會記住，下次開啟沿用。</p>
+          </div>
+          <button class="dialog-close" value="cancel" aria-label="關閉">×</button>
+        </div>
+        <label>
+          <span>使用的助理</span>
+          <select id="engine-select"></select>
+        </label>
+        <label>
+          <span>模型</span>
+          <select id="model-select"></select>
+        </label>
+        <label id="custom-model-wrap" class="hidden">
+          <span>模型 ID</span>
+          <input id="custom-model" type="text" autocomplete="off" placeholder="例如：gpt-5.6-luna" />
+        </label>
+        <label>
+          <span>思考深度</span>
+          <select id="effort-select"></select>
+          <small class="field-hint">想得越深越仔細，但會比較慢、比較花錢。</small>
+        </label>
+        <label class="toggle-row">
+          <input id="auto-retry" type="checkbox" />
+          <span>
+            <strong>自動等待並重試</strong>
+            <small>遇到 5 小時額度、服務忙碌或暫時斷線時持續等待</small>
+          </span>
+        </label>
+        <div class="dialog-actions split-actions">
+          <button id="shutdown-app" class="danger-quiet" type="button">結束小幫手</button>
+          <div>
+            <button value="cancel" class="secondary">取消</button>
+            <button id="save-settings" value="default" class="primary">儲存</button>
+          </div>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="confirm-dialog" class="dialog confirm-dialog">
+      <form method="dialog">
+        <div class="confirm-icon" aria-hidden="true">✓</div>
+        <h2>加入 BookTrace？</h2>
+        <p id="confirm-text">確認版本與封面都正確後，才會寫入正式書架。</p>
+        <div class="dialog-actions centered">
+          <button value="cancel" class="secondary">再看一下</button>
+          <button id="confirm-save" value="default" class="primary">確認加入</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast hidden" role="status"></div>
+
+    <script>window.BOOKTRACE_TOKEN = __BOOKTRACE_TOKEN__;</script>
+    <script src="/app.js"></script>
+  </body>
+</html>
+
