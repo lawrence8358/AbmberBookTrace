@@ -52,7 +52,8 @@
           "publicationYear": { "type": "string" },
           "pages": { "type": "string" },
           "binding": { "type": "string" },
-          "coverDescription": { "type": "string" }
+          "coverDescription": { "type": "string" },
+          "coverUrl": { "type": "string" }
         },
         "required": [
           "title",
@@ -60,7 +61,8 @@
           "publicationYear",
           "pages",
           "binding",
-          "coverDescription"
+          "coverDescription",
+          "coverUrl"
         ]
       }
     },
