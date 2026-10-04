@@ -33,8 +33,9 @@ let busy = false;
 let busyMode = "";
 let retryDeadline = null;
 let settings = null;
-let currentCard = null;
-let currentSaveButton = null;
+const itemsUI = {};
+let pendingSave = null;
+let batchRows = [];
 let stopped = false;
 let progress = null;
 
@@ -131,12 +132,23 @@ function fact(label, value) {
   return [dt, dd];
 }
 
-function renderOutcome(outcome, attempts) {
+function itemUI(itemId) {
+  return (itemsUI[itemId] ||= { label: "", title: "", card: null, saveButton: null, saved: false });
+}
+
+function itemName(itemId) {
+  const ui = itemsUI[itemId];
+  return ui ? ui.title || ui.label : "";
+}
+
+function renderOutcome(outcome, attempts, itemId) {
   const content = addMessage("assistant", outcome.summary || "查證完成。", []);
   const card = document.createElement("section");
   card.className = "book-card";
-  currentCard = card;
-  currentSaveButton = null;
+  const ui = itemUI(itemId);
+  ui.card = card;
+  ui.saveButton = null;
+  ui.title = outcome.book.title || ui.title;
 
   const main = document.createElement("div");
   main.className = "book-card-main";
@@ -185,9 +197,33 @@ function renderOutcome(outcome, attempts) {
     strong.textContent = "可能的版本";
     box.appendChild(strong);
     const list = document.createElement("ol");
+    list.className = "candidate-list";
     outcome.candidates.forEach((candidate) => {
       const li = document.createElement("li");
-      li.textContent = [candidate.title, candidate.isbn, candidate.publication_year, candidate.pages, candidate.binding, candidate.cover_description].filter(Boolean).join(" · ");
+      li.className = "candidate";
+      if (candidate.cover_media) {
+        const thumb = document.createElement("img");
+        thumb.src = candidate.cover_media;
+        thumb.alt = "候選版本封面";
+        thumb.addEventListener("click", () => window.open(candidate.cover_media, "_blank", "noopener"));
+        li.appendChild(thumb);
+      }
+      const body = document.createElement("div");
+      body.className = "candidate-body";
+      body.textContent = [candidate.title, candidate.isbn, candidate.publication_year, candidate.pages, candidate.binding, candidate.cover_description].filter(Boolean).join(" · ");
+      li.appendChild(body);
+      if (candidate.isbn || candidate.title) {
+        const pick = document.createElement("button");
+        pick.type = "button";
+        pick.className = "secondary candidate-pick";
+        pick.textContent = "就是這本";
+        pick.addEventListener("click", async () => {
+          const text = `請以這個版本為準：${[candidate.title, candidate.isbn && `ISBN ${candidate.isbn}`, candidate.publication_year && `${candidate.publication_year} 年版`].filter(Boolean).join("，")}`;
+          try { await api("/api/message", { method: "POST", body: JSON.stringify({ text, contextItemId: itemId }) }); }
+          catch (error) { showToast(error.message); }
+        });
+        li.appendChild(pick);
+      }
       list.appendChild(li);
     });
     box.appendChild(list);
@@ -237,11 +273,34 @@ function renderOutcome(outcome, attempts) {
     button.textContent = "加入 BookTrace";
     button.addEventListener("click", () => {
       document.querySelector("#confirm-text").textContent = `確認要把《${outcome.book.title || "這本書"}》加入或補齊 BookTrace 嗎？`;
+      pendingSave = { itemId };
       confirmDialog.showModal();
     });
-    currentSaveButton = button;
+    ui.saveButton = button;
     saveRow.append(hint, button);
     card.appendChild(saveRow);
+  } else {
+    const refine = document.createElement("div");
+    refine.className = "refine-row";
+    const field = document.createElement("input");
+    field.type = "text";
+    field.placeholder = "補充線索（例如 ISBN、出版年、封面特徵）後重新查證";
+    const go = document.createElement("button");
+    go.type = "button";
+    go.className = "secondary";
+    go.textContent = "補充後重查";
+    const submit = async () => {
+      const text = field.value.trim();
+      if (!text) { field.focus(); return; }
+      try { await api("/api/message", { method: "POST", body: JSON.stringify({ text, contextItemId: itemId }) }); }
+      catch (error) { showToast(error.message); }
+    };
+    go.addEventListener("click", submit);
+    field.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); submit(); }
+    });
+    refine.append(field, go);
+    card.appendChild(refine);
   }
   content.appendChild(card);
   if (attempts > 1) {
@@ -253,9 +312,10 @@ function renderOutcome(outcome, attempts) {
   scrollToBottom();
 }
 
-function setCover(url) {
-  if (!currentCard) return;
-  const shell = currentCard.querySelector('[data-role="cover"]');
+function setCover(url, itemId) {
+  const ui = itemsUI[itemId];
+  if (!ui || !ui.card) return;
+  const shell = ui.card.querySelector('[data-role="cover"]');
   if (!shell) return;
   shell.textContent = "";
   const image = document.createElement("img");
@@ -263,10 +323,12 @@ function setCover(url) {
   image.alt = "已核對的書籍封面";
   image.addEventListener("click", () => window.open(url, "_blank", "noopener"));
   shell.appendChild(image);
-  if (currentSaveButton) currentSaveButton.disabled = false;
+  if (ui.saveButton) ui.saveButton.disabled = false;
 }
 
-function addError(message) {
+function addError(message, itemId = "") {
+  const name = itemName(itemId);
+  if (name && Object.keys(itemsUI).length > 1) message = `《${name}》：${message}`;
   const content = addMessage("assistant", "", []);
   const error = document.createElement("div");
   error.className = "assistant-error";
@@ -289,10 +351,37 @@ function addSaved(event) {
   link.textContent = "開啟 BookTrace →";
   card.append(title, detail, link);
   content.appendChild(card);
-  if (currentSaveButton) {
-    currentSaveButton.disabled = true;
-    currentSaveButton.textContent = "已加入";
+  const ui = itemsUI[event.itemId];
+  if (ui?.saveButton) {
+    ui.saveButton.disabled = true;
+    ui.saveButton.textContent = "已加入";
+    ui.saved = true;
   }
+}
+
+function addBatchSummary(event) {
+  const content = addMessage("assistant", "", []);
+  const box = document.createElement("div");
+  box.className = "batch-summary";
+  const text = document.createElement("div");
+  const unsaved = (event.itemIds || []).filter((id) => itemsUI[id]?.saveButton && !itemsUI[id].saved).length;
+  text.textContent = `已查完 ${event.total} 本，其中 ${event.ready} 本版本與封面都核對好了。` +
+    (event.ready < event.total ? "其他的請看各自卡片上的說明。" : "");
+  box.appendChild(text);
+  if (unsaved) {
+    const all = document.createElement("button");
+    all.type = "button";
+    all.className = "save-book-button";
+    all.textContent = `全部加入（${unsaved} 本）`;
+    all.addEventListener("click", () => {
+      pendingSave = { all: true };
+      document.querySelector("#confirm-text").textContent = `確認要把這 ${unsaved} 本書都加入或補齊 BookTrace 嗎？（只會寫入封面已確認的書）`;
+      confirmDialog.showModal();
+    });
+    box.appendChild(all);
+  }
+  content.appendChild(box);
+  scrollToBottom();
 }
 
 function formatDuration(totalSeconds) {
@@ -402,28 +491,37 @@ function processEvent(event) {
       progress = null;
       messages.textContent = "";
       welcome.classList.remove("hidden");
-      currentCard = null;
-      currentSaveButton = null;
+      Object.keys(itemsUI).forEach((id) => delete itemsUI[id]);
       break;
-    case "user":
-      addMessage("user", event.text, event.images || []);
-      currentCard = null;
-      currentSaveButton = null;
+    case "user": {
+      const ui = itemUI(event.itemId);
+      ui.label = (event.text || "").split("\n")[0].slice(0, 30) || "照片中的書";
+      const content = addMessage("user", event.text, event.images || []);
+      if (event.total > 1) {
+        const tag = document.createElement("span");
+        tag.className = "item-label";
+        tag.textContent = `第 ${event.index} / ${event.total} 本`;
+        content.prepend(tag);
+      }
       break;
+    }
     case "assistant":
-      renderOutcome(event.outcome, event.attempts || 1);
+      renderOutcome(event.outcome, event.attempts || 1, event.itemId);
       break;
     case "assistant_error":
-      addError(event.message || "處理未完成。請再試一次。");
+      addError(event.message || "處理未完成。請再試一次。", event.itemId);
       break;
     case "cover_ready":
-      setCover(event.url);
+      setCover(event.url, event.itemId);
       break;
     case "cover_error":
-      addError(event.message || "封面尚未準備完成。");
+      addError(event.message || "封面尚未準備完成。", event.itemId);
       break;
     case "saved":
       addSaved(event);
+      break;
+    case "batch_finished":
+      addBatchSummary(event);
       break;
     case "busy":
       setBusy(event.busy, event.mode, event.status);
@@ -635,7 +733,7 @@ function renderSettings() {
     effortSelect.appendChild(option);
   });
   effortSelect.value = settings.effort || "";
-  const engineName = settings.engine === "codex" ? "Codex" : "Claude";
+  const engineName = settings.engines.find((item) => item.value === settings.engine)?.label || settings.engine;
   const model = modelLabel(settings.engine, settings.models[settings.engine] || "").split("·")[0].trim();
   modelBadge.textContent = `${engineName} · ${model} · 思考：${effortLabel(settings.effort || "")}`;
 }
@@ -679,7 +777,9 @@ document.querySelector("#save-settings").addEventListener("click", async (event)
 document.querySelector("#confirm-save").addEventListener("click", async (event) => {
   event.preventDefault();
   confirmDialog.close();
-  try { await api("/api/save", { method: "POST", body: JSON.stringify({ confirmed: true }) }); }
+  const target = pendingSave || {};
+  pendingSave = null;
+  try { await api("/api/save", { method: "POST", body: JSON.stringify({ confirmed: true, itemId: target.itemId || "", all: !!target.all }) }); }
   catch (error) { showToast(error.message); }
 });
 
@@ -707,3 +807,133 @@ async function initialize() {
 }
 
 initialize();
+
+// ---- 一次查多本書 ----
+const batchDialog = document.querySelector("#batch-dialog");
+const batchRowsEl = document.querySelector("#batch-rows");
+const batchPhotoInput = document.querySelector("#batch-photo-input");
+const MAX_BATCH = 10;
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+
+function newBatchRow(file = null) {
+  return { text: "", file, url: file ? URL.createObjectURL(file) : "", isCover: !!file };
+}
+
+function acceptBatchFile(file) {
+  if (!IMAGE_TYPES.includes(file.type)) { showToast(`${file.name || "這張圖片"} 不是支援的 JPG、PNG、GIF 或 WebP`); return false; }
+  if (file.size > 5 * 1024 * 1024) { showToast(`${file.name || "這張圖片"} 超過 5 MB`); return false; }
+  return true;
+}
+
+function renderBatchRows() {
+  batchRowsEl.textContent = "";
+  batchRows.forEach((row, index) => {
+    const el = document.createElement("div");
+    el.className = "batch-row";
+    const no = document.createElement("span");
+    no.className = "batch-no";
+    no.textContent = String(index + 1);
+    const text = document.createElement("input");
+    text.type = "text";
+    text.placeholder = "書名或 ISBN（有附照片也可以留空）";
+    text.value = row.text;
+    text.addEventListener("input", () => { row.text = text.value; });
+    const photo = document.createElement("div");
+    photo.className = "batch-photo";
+    if (row.file) {
+      const image = document.createElement("img");
+      image.src = row.url;
+      image.alt = "書本照片";
+      const cover = document.createElement("label");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = row.isCover;
+      box.addEventListener("change", () => { row.isCover = box.checked; });
+      cover.append(box, "這是封面");
+      const clear = document.createElement("button");
+      clear.type = "button";
+      clear.className = "batch-remove";
+      clear.textContent = "×";
+      clear.setAttribute("aria-label", "移除照片");
+      clear.addEventListener("click", () => { URL.revokeObjectURL(row.url); row.file = null; row.url = ""; row.isCover = false; renderBatchRows(); });
+      photo.append(image, cover, clear);
+    } else {
+      const pick = document.createElement("button");
+      pick.type = "button";
+      pick.className = "secondary";
+      pick.textContent = "加照片";
+      pick.addEventListener("click", () => {
+        const chooser = document.createElement("input");
+        chooser.type = "file";
+        chooser.accept = IMAGE_TYPES.join(",");
+        chooser.addEventListener("change", () => {
+          const file = chooser.files[0];
+          if (file && acceptBatchFile(file)) { row.file = file; row.url = URL.createObjectURL(file); row.isCover = true; renderBatchRows(); }
+        });
+        chooser.click();
+      });
+      photo.appendChild(pick);
+    }
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "batch-remove";
+    remove.textContent = "×";
+    remove.setAttribute("aria-label", "移除這一本");
+    remove.addEventListener("click", () => {
+      if (row.url) URL.revokeObjectURL(row.url);
+      batchRows.splice(index, 1);
+      if (!batchRows.length) batchRows.push(newBatchRow());
+      renderBatchRows();
+    });
+    el.append(no, text, photo, remove);
+    batchRowsEl.appendChild(el);
+  });
+}
+
+document.querySelector("#batch-button").addEventListener("click", () => {
+  if (busy) { showToast("請等目前的處理完成"); return; }
+  if (!batchRows.length) batchRows = [newBatchRow(), newBatchRow()];
+  renderBatchRows();
+  batchDialog.showModal();
+});
+document.querySelector("#batch-add-row").addEventListener("click", () => {
+  if (batchRows.length >= MAX_BATCH) { showToast(`一次最多 ${MAX_BATCH} 本`); return; }
+  batchRows.push(newBatchRow());
+  renderBatchRows();
+});
+document.querySelector("#batch-add-photos").addEventListener("click", () => batchPhotoInput.click());
+batchPhotoInput.addEventListener("change", () => {
+  // Each chosen photo becomes its own book row; untouched empty rows are dropped first.
+  batchRows = batchRows.filter((row) => row.text.trim() || row.file);
+  for (const file of batchPhotoInput.files) {
+    if (batchRows.length >= MAX_BATCH) { showToast(`一次最多 ${MAX_BATCH} 本`); break; }
+    if (acceptBatchFile(file)) batchRows.push(newBatchRow(file));
+  }
+  batchPhotoInput.value = "";
+  if (!batchRows.length) batchRows.push(newBatchRow());
+  renderBatchRows();
+});
+
+document.querySelector("#batch-start").addEventListener("click", async (event) => {
+  event.preventDefault();
+  const rows = batchRows.filter((row) => row.text.trim() || row.file);
+  if (!rows.length) { showToast("請至少輸入一本書的書名、ISBN 或照片"); return; }
+  const start = document.querySelector("#batch-start");
+  start.disabled = true;
+  try {
+    const items = [];
+    for (const row of rows) {
+      const item = { text: row.text.trim(), isCover: row.isCover };
+      if (row.file) item.image = { name: row.file.name, type: row.file.type, data: await fileToBase64(row.file) };
+      items.push(item);
+    }
+    await api("/api/batch", { method: "POST", body: JSON.stringify({ items }) });
+    batchRows.forEach((row) => row.url && URL.revokeObjectURL(row.url));
+    batchRows = [];
+    batchDialog.close();
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    start.disabled = false;
+  }
+});

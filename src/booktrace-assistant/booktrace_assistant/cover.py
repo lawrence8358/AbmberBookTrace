@@ -14,6 +14,19 @@ from .core import (
 )
 
 
+# Sanmin has no image for some ISBNs and answers 200 with a ~1 KB placeholder instead of a 404.
+MIN_REAL_COVER_BYTES = 3000
+
+
+def sanmin_cover_url(isbn: str) -> str:
+    """Sanmin's CDN names covers by the first 9 digits of the ISBN-10 (ISBN-13 minus the 978 prefix)."""
+    digits = isbn.replace("-", "").strip()
+    if len(digits) != 13 or not digits.isdigit() or not digits.startswith("978"):
+        return ""
+    core = digits[3:12]
+    return f"https://cdnec.sanmin.com.tw/product_images/{core[:3]}/{core}.jpg"
+
+
 class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
         parsed = validate_public_url(newurl)

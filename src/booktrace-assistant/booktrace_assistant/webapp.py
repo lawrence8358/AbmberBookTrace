@@ -11,7 +11,8 @@ import urllib.parse
 import urllib.request
 import uuid
 import webbrowser
-from dataclasses import asdict
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict, dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -19,6 +20,7 @@ from typing import Any
 
 from .core import (
     BOOKTRACE_SITE,
+    Candidate,
     MAX_ATTACHMENTS,
     MAX_IMAGE_BYTES,
     SETTINGS_PATH,
@@ -33,13 +35,15 @@ from .core import (
     parse_research_outcome,
     validate_research_request,
 )
-from .cover import download_cover
-from .runner import DEFAULT_ENGINE, DEFAULT_MODELS, EFFORT_LEVELS, CliResearchRunner, RunResult, detect_engines
+from .cover import MIN_REAL_COVER_BYTES, download_cover, sanmin_cover_url
+from .runner import DEFAULT_ENGINE, DEFAULT_MODELS, EFFORT_LEVELS, ENGINE_LABELS, ENGINE_NAMES, CliResearchRunner, RunResult, detect_engines
 from .saver import BookSaver, SaveResult
 
 
 WEB_ROOT = Path(__file__).with_name("web")
-MAX_REQUEST_BYTES = 30 * 1024 * 1024
+MAX_REQUEST_BYTES = 80 * 1024 * 1024
+MAX_BATCH_BOOKS = 10
+MAX_CANDIDATE_COVERS = 6
 MODEL_OPTIONS = {
     "codex": [
         {"value": "gpt-5.6-luna", "label": "Luna · 低費率（推薦）"},
@@ -56,6 +60,7 @@ MODEL_OPTIONS = {
         {"value": "", "label": "跟隨 Claude 預設"},
     ],
 }
+MODEL_OPTIONS["claude-5x"] = MODEL_OPTIONS["claude"]
 EFFORT_OPTIONS = [
     {"value": "", "label": "自動（由模型決定）"},
     {"value": "low", "label": "低 · 最快、最省"},
@@ -107,11 +112,25 @@ def load_preferences(raw: dict[str, Any], engines: dict[str, str]) -> tuple[str,
         engine = next(iter(engines), "")
     raw_models = raw.get("models") if isinstance(raw.get("models"), dict) else {}
     models = {}
-    for name in ("codex", "claude"):
+    for name in ENGINE_NAMES:
         saved = raw_models.get(name)
         models[name] = normalize_model_choice(saved) or "" if isinstance(saved, str) else DEFAULT_MODELS[name]
     effort = raw.get("effort") if raw.get("effort") in EFFORT_LEVELS else ""
     return engine, models, bool(raw.get("auto_retry", True)), effort
+
+
+@dataclass
+class BookItem:
+    """One book in the chat: its request, the researched outcome, and whether it was saved."""
+
+    id: str
+    text: str = ""
+    images: tuple[Path, ...] = ()
+    cover_index: int = -1
+    outcome: ResearchOutcome | None = None
+    cover_path: Path | None = None
+    saved: bool = False
+    previous_context: str = ""
 
 
 def _safe_text(value: Any, limit: int = 10000) -> str:
@@ -132,12 +151,10 @@ class ChatState:
         self.runner = CliResearchRunner()
         self.saver = BookSaver()
         self.workspace = create_workspace()
-        self.outcome: ResearchOutcome | None = None
-        self.cover_path: Path | None = None
-        self.cover_media_id = ""
+        self.items: dict[str, BookItem] = {}
+        self.last_item_id = ""
+        self.current_item_id = ""
         self.media: dict[str, Path] = {}
-        self.previous_context = ""
-        self.saved = False
         self.generation = 0
         self.last_activity = time.time()
 
@@ -147,8 +164,8 @@ class ChatState:
     def settings_payload(self) -> dict[str, Any]:
         return {
             "engines": [
-                {"value": name, "label": "Codex" if name == "codex" else "Claude"}
-                for name in ("codex", "claude")
+                {"value": name, "label": ENGINE_LABELS[name]}
+                for name in ENGINE_NAMES
                 if name in self.engines
             ],
             "engine": self.engine,
@@ -165,7 +182,7 @@ class ChatState:
                 "busy": self.busy,
                 "busyMode": self.busy_mode,
                 "status": self.status,
-                "canSave": bool(self.outcome and self.outcome.ready and self.cover_path and not self.saved and not self.busy),
+                "canSave": not self.busy and any(self._item_can_save(item) for item in self.items.values()),
                 "settings": self.settings_payload(),
                 "lastEventId": self.next_event_id - 1,
                 "booktraceSite": BOOKTRACE_SITE,
@@ -229,7 +246,7 @@ class ChatState:
         if kind == "retry":
             self.emit("retry", message=text, deadline=deadline)
         elif kind.startswith("step:"):
-            self.emit("step", kind=kind.removeprefix("step:"), text=text)
+            self.emit("step", itemId=self.current_item_id, kind=kind.removeprefix("step:"), text=text)
         elif kind == "thinking":
             # Frequent token-count updates: shown through the polled status only.
             with self.lock:
@@ -287,118 +304,226 @@ class ChatState:
             cover_index = -1
         if not (0 <= cover_index < len(images)):
             cover_index = -1
+        with self.lock:
+            # A follow-up answers one earlier item (the clicked card, else the latest one).
+            earlier = self.items.get(_safe_text(payload.get("contextItemId"), 40)) or self.items.get(self.last_item_id)
+            if earlier and not images:
+                images, cover_index = earlier.images, earlier.cover_index
+                image_urls = [self._media_url(path) for path in images]
         request = ResearchRequest(
             query=text,
             image_paths=images,
-            previous_context=self.previous_context,
+            previous_context=earlier.previous_context if earlier else "",
             designated_cover_index=cover_index,
         )
         validate_research_request(request)
         with self.lock:
             self.generation += 1
             generation = self.generation
-            self.outcome = None
-            self.cover_path = None
-            self.cover_media_id = ""
-            self.saved = False
+            item = self._new_item(text, images, cover_index)
+            self.last_item_id = item.id
+            self._set_busy("research", "正在辨識並查證這本書…")
+
+        def work() -> None:
+            self.emit("user", itemId=item.id, text=text, images=image_urls, coverIndex=cover_index)
+            idle, _ = self._research_item(generation, item, request)
+            if idle is not None:
+                self._set_idle(idle)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def send_batch(self, payload: dict[str, Any]) -> None:
+        """Research several books one after another; each row is one book (text and/or one photo)."""
+        with self.lock:
+            if self.busy:
+                raise UserInputError("上一則訊息仍在處理中，可以先按停止。")
+            if not self.engines:
+                raise UserInputError("找不到 Codex 或 Claude CLI，請先安裝並登入。")
+        rows = payload.get("items")
+        if not isinstance(rows, list) or not rows:
+            raise UserInputError("請至少加入一本書。")
+        if len(rows) > MAX_BATCH_BOOKS:
+            raise UserInputError(f"一次最多查 {MAX_BATCH_BOOKS} 本書。")
+        prepared: list[tuple[str, list[str], int, ResearchRequest]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                raise UserInputError("書籍資料格式不正確。")
+            text = _safe_text(row.get("text"), 2000)
+            raw_image = row.get("image")
+            images, urls = self._save_uploaded_images([raw_image] if raw_image else [])
+            # One photo per book; the user says whether that photo is the front cover.
+            cover_index = 0 if images and row.get("isCover") is True else -1
+            request = ResearchRequest(query=text, image_paths=images, designated_cover_index=cover_index)
+            validate_research_request(request)
+            prepared.append((text, urls, cover_index, request))
+        with self.lock:
+            self.generation += 1
+            generation = self.generation
+            self.last_item_id = ""
+            items = [
+                self._new_item(text, request.image_paths, cover_index)
+                for text, _, cover_index, request in prepared
+            ]
+            self._set_busy("research", f"正在查證第 1 / {len(items)} 本…")
+
+        def work() -> None:
+            total = len(items)
+            stopped = False
+            for index, (item, (text, urls, cover_index, request)) in enumerate(zip(items, prepared), start=1):
+                with self.lock:
+                    if generation != self.generation:
+                        return
+                    self.status = f"正在查證第 {index} / {total} 本…"
+                self.emit(
+                    "user", itemId=item.id, text=text, images=urls, coverIndex=cover_index, index=index, total=total
+                )
+                idle, cancelled = self._research_item(generation, item, request)
+                if idle is None:
+                    return
+                if cancelled:
+                    stopped = True
+                    break
+            ready = sum(1 for item in items if self._item_can_save(item))
+            self.emit("batch_finished", total=total, ready=ready, itemIds=[item.id for item in items])
+            self._set_idle("已停止" if stopped else f"已查完，{ready} 本可以加入書架")
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _new_item(self, text: str, images: tuple[Path, ...], cover_index: int) -> BookItem:
+        item = BookItem(id=uuid.uuid4().hex[:12], text=text, images=images, cover_index=cover_index)
+        self.items[item.id] = item
+        self.current_item_id = item.id
+        return item
+
+    @staticmethod
+    def _item_can_save(item: BookItem) -> bool:
+        return bool(item.outcome and item.outcome.ready and item.cover_path and not item.saved)
+
+    def _media_url(self, path: Path) -> str:
+        return f"/media/{self._media_id_for(path)}?token={urllib.parse.quote(self.token)}"
+
+    def _research_item(self, generation: int, item: BookItem, request: ResearchRequest) -> tuple[str | None, bool]:
+        """Run one book through the read-only research. Returns (idle label, cancelled); label None = stale."""
+        with self.lock:
             engine = self.engine
             model = self.models.get(engine) or None
             effort = self.effort or None
             executable = self.engines[engine]
             auto_retry = self.auto_retry
-            self.emit("user", text=text, images=image_urls, coverIndex=cover_index)
-            self.emit(
-                "run_started",
-                engine="Codex" if engine == "codex" else "Claude",
-                model=model_label(engine, model or ""),
-                effort=effort_label(effort or ""),
-                at=time.time(),
-            )
-            self._set_busy("research", "正在辨識並查證這本書…")
+            self.current_item_id = item.id
+        self.emit(
+            "run_started",
+            itemId=item.id,
+            engine=ENGINE_LABELS[engine],
+            model=model_label(engine, model or ""),
+            effort=effort_label(effort or ""),
+            at=time.time(),
+        )
+        started = time.time()
+        result = self.runner.run(
+            engine=engine,
+            executable=executable,
+            model=model,
+            request=request,
+            auto_retry=auto_retry,
+            callback=self._runner_event,
+            effort=effort,
+        )
+        self.emit(
+            "run_finished",
+            itemId=item.id,
+            ok=result.ok,
+            seconds=round(time.time() - started),
+            usage=result.usage,
+            attempts=result.attempts,
+        )
+        return self._finish_research(generation, item, result), result.cancelled
 
-        def work() -> None:
-            started = time.time()
-            result = self.runner.run(
-                engine=engine,
-                executable=executable,
-                model=model,
-                request=request,
-                auto_retry=auto_retry,
-                callback=self._runner_event,
-                effort=effort,
-            )
-            self.emit(
-                "run_finished",
-                ok=result.ok,
-                seconds=round(time.time() - started),
-                usage=result.usage,
-                attempts=result.attempts,
-            )
-            self._finish_research(generation, result, images, cover_index)
-
-        threading.Thread(target=work, daemon=True).start()
-
-    def _finish_research(
-        self,
-        generation: int,
-        result: RunResult,
-        images: tuple[Path, ...],
-        cover_index: int,
-    ) -> None:
+    def _finish_research(self, generation: int, item: BookItem, result: RunResult) -> str | None:
+        """Record the result on the item and emit its card; returns the idle label (None = stale)."""
         with self.lock:
             if generation != self.generation:
-                return
+                return None
         if result.cancelled:
-            self.emit("assistant_error", message="已停止這次查證。")
-            self._set_idle("已停止")
-            return
+            self.emit("assistant_error", itemId=item.id, message="已停止這次查證。")
+            return "已停止"
         if not result.ok:
-            self.emit("assistant_error", message=self._friendly_error(result.error))
-            self._set_idle("查證未完成")
-            return
+            self.emit("assistant_error", itemId=item.id, message=self._friendly_error(result.error))
+            return "查證未完成"
         try:
             source = result.structured if result.structured is not None else result.final_text
             outcome = parse_research_outcome(source)
         except UserInputError as error:
-            self.emit("assistant_error", message=str(error))
-            self._set_idle("結果需要重新查證")
-            return
+            self.emit("assistant_error", itemId=item.id, message=str(error))
+            return "結果需要重新查證"
         with self.lock:
-            self.outcome = outcome
-            self.previous_context = json.dumps(outcome.raw, ensure_ascii=False)
-        self.emit("assistant", outcome=self._outcome_payload(outcome), attempts=result.attempts)
+            item.outcome = outcome
+            item.previous_context = json.dumps(outcome.raw, ensure_ascii=False)
+        covers = [] if outcome.ready else self._candidate_covers(outcome.candidates)
+        self.emit(
+            "assistant", itemId=item.id, outcome=self._outcome_payload(outcome, covers), attempts=result.attempts
+        )
         if not outcome.ready:
-            label = "需要你補充一點資料" if outcome.status == "needs_clarification" else "尚未找到可確認的版本"
-            self._set_idle(label)
-            return
+            return "需要你補充一點資料" if outcome.status == "needs_clarification" else "尚未找到可確認的版本"
         try:
-            if 0 <= cover_index < len(images):
-                cover_path = images[cover_index]
-            elif outcome.book.cover_url:
+            if 0 <= item.cover_index < len(item.images):
+                cover_path = item.images[item.cover_index]
+            elif outcome.book.cover_url or sanmin_cover_url(outcome.book.isbn):
                 self.emit("status", message="正在準備封面讓你確認…", kind="status")
-                cover_path = download_cover(
-                    outcome.book.cover_url,
-                    self.workspace / f"cover-{uuid.uuid4().hex}.img",
-                    self.workspace,
-                )
+                cover_path = self._download_cover_for_review(outcome.book.cover_url, outcome.book.isbn)
             else:
                 raise UserInputError("找不到可信封面。你可以貼上正面封面照，再傳一句「這張是封面」。")
         except (UserInputError, OSError) as error:
-            self.emit("cover_error", message=str(error))
-            self._set_idle("缺少可確認的封面")
-            return
+            self.emit("cover_error", itemId=item.id, message=str(error))
+            return "缺少可確認的封面"
         with self.lock:
             if generation != self.generation:
-                return
-            self.cover_path = cover_path
-            media_id = self._media_id_for(cover_path)
-            self.cover_media_id = media_id
-        self.emit(
-            "cover_ready",
-            url=f"/media/{media_id}?token={urllib.parse.quote(self.token)}",
-            canSave=True,
-        )
-        self._set_idle("請看過封面，再決定是否加入書架")
+                return None
+            item.cover_path = cover_path
+            media_url = self._media_url(cover_path)
+        self.emit("cover_ready", itemId=item.id, url=media_url, canSave=True)
+        return "請看過封面，再決定是否加入書架"
+
+    def _download_cover_for_review(self, cover_url: str, isbn: str) -> Path:
+        """Download the AI's cover; if it gave none or it fails, use Sanmin's ISBN-based image. The user still confirms it by eye."""
+        urls = [url for url in (cover_url, sanmin_cover_url(isbn)) if url]
+        last_error: Exception | None = None
+        for url in urls:
+            try:
+                path = download_cover(url, self.workspace / f"cover-{uuid.uuid4().hex}.img", self.workspace)
+            except (UserInputError, OSError) as error:
+                last_error = error
+                continue
+            if path.stat().st_size < MIN_REAL_COVER_BYTES:
+                path.unlink(missing_ok=True)
+                last_error = UserInputError("下載到的是無圖佔位圖。")
+                continue
+            return path
+        raise last_error or UserInputError("找不到可信封面。")
+
+    def _candidate_covers(self, candidates: tuple[Candidate, ...]) -> list[str]:
+        """Fetch each candidate's cover so the browser (img-src 'self') can show it; "" when unavailable."""
+        shown = candidates[:MAX_CANDIDATE_COVERS]
+
+        def fetch(candidate: Candidate) -> str:
+            # Prefer the cover the AI saw on the source page; else the one Sanmin's CDN keeps for the ISBN.
+            url = candidate.cover_url or sanmin_cover_url(candidate.isbn)
+            if not url:
+                return ""
+            try:
+                path = download_cover(url, self.workspace / f"candidate-{uuid.uuid4().hex}.img", self.workspace)
+                if path.stat().st_size < MIN_REAL_COVER_BYTES:
+                    path.unlink(missing_ok=True)
+                    return ""
+            except (UserInputError, OSError):
+                return ""
+            with self.lock:
+                return self._media_url(path)
+
+        if not shown:
+            return []
+        with ThreadPoolExecutor(max_workers=len(shown)) as pool:
+            return list(pool.map(fetch, shown))
 
     def _media_id_for(self, path: Path) -> str:
         for media_id, existing in self.media.items():
@@ -409,8 +534,9 @@ class ChatState:
         return media_id
 
     @staticmethod
-    def _outcome_payload(outcome: ResearchOutcome) -> dict[str, Any]:
+    def _outcome_payload(outcome: ResearchOutcome, candidate_covers: list[str] | None = None) -> dict[str, Any]:
         book = outcome.book
+        covers = candidate_covers or []
         return {
             "status": outcome.status,
             "summary": outcome.summary,
@@ -426,7 +552,13 @@ class ChatState:
                 "sources": list(book.sources),
                 "unknownFields": list(book.unknown_fields),
             },
-            "candidates": [asdict(candidate) for candidate in outcome.candidates],
+            "candidates": [
+                {
+                    **{key: value for key, value in asdict(candidate).items() if key != "cover_url"},
+                    "cover_media": covers[index] if index < len(covers) else "",
+                }
+                for index, candidate in enumerate(outcome.candidates)
+            ],
             "questions": list(outcome.questions),
             "userProvided": {
                 "purchaseDate": outcome.personal.purchase_date,
@@ -448,48 +580,69 @@ class ChatState:
             return "這個助理的帳號額度已用完，需要補充額度後才能繼續。也可以到右上角設定改用另一個助理。"
         return value[-5000:]
 
-    def save_book(self) -> None:
+    def save_book(self, item_id: str = "", save_all: bool = False) -> None:
         with self.lock:
             if self.busy:
                 raise UserInputError("目前仍在處理訊息。")
-            if not self.outcome or not self.outcome.ready or not self.cover_path:
-                raise UserInputError("這本書尚未完成版本與封面確認。")
-            if self.saved:
-                raise UserInputError("這本書已經保存完成。")
+            if save_all:
+                targets = [item for item in self.items.values() if self._item_can_save(item)]
+                if not targets:
+                    raise UserInputError("目前沒有可以加入的書。")
+            else:
+                item = self.items.get(item_id or self.last_item_id)
+                if not item or not item.outcome or not item.outcome.ready or not item.cover_path:
+                    raise UserInputError("這本書尚未完成版本與封面確認。")
+                if item.saved:
+                    raise UserInputError("這本書已經保存完成。")
+                targets = [item]
             generation = self.generation
-            outcome = self.outcome
-            cover_path = self.cover_path
             auto_retry = self.auto_retry
             self._set_busy("save", "正在加入書架、上傳封面並讀回確認…")
 
         def work() -> None:
-            result = self.saver.save(
-                book=outcome.book,
-                personal=outcome.personal,
-                cover_path=cover_path,
-                workspace=self.workspace,
-                correct=outcome.correct_existing,
-                replace_cover=outcome.replace_cover,
-                auto_retry=auto_retry,
-                callback=self._runner_event,
-            )
-            self._finish_save(generation, result)
+            failures = 0
+            for index, item in enumerate(targets, start=1):
+                with self.lock:
+                    if generation != self.generation:
+                        return
+                    self.current_item_id = item.id
+                    if len(targets) > 1:
+                        self.status = f"正在加入第 {index} / {len(targets)} 本…"
+                result = self.saver.save(
+                    book=item.outcome.book,
+                    personal=item.outcome.personal,
+                    cover_path=item.cover_path,
+                    workspace=self.workspace,
+                    correct=item.outcome.correct_existing,
+                    replace_cover=item.outcome.replace_cover,
+                    auto_retry=auto_retry,
+                    callback=self._runner_event,
+                )
+                if not self._finish_save(generation, item, result):
+                    failures += 1
+            if len(targets) > 1:
+                done = len(targets) - failures
+                self._set_idle(f"已加入 {done} 本" + (f"，{failures} 本未完成" if failures else ""))
+            elif failures:
+                self._set_idle("保存未完成，可以再試一次")
+            else:
+                self._set_idle("已加入 BookTrace")
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _finish_save(self, generation: int, result: SaveResult) -> None:
+    def _finish_save(self, generation: int, item: BookItem, result: SaveResult) -> bool:
         with self.lock:
             if generation != self.generation:
-                return
+                return False
         if not result.ok or not result.payload:
-            self.emit("assistant_error", message=self._friendly_error(result.error))
-            self._set_idle("保存未完成，可以再試一次")
-            return
+            self.emit("assistant_error", itemId=item.id, message=self._friendly_error(result.error))
+            return False
         book = result.payload.get("book") if isinstance(result.payload.get("book"), dict) else {}
         with self.lock:
-            self.saved = True
+            item.saved = True
         self.emit(
             "saved",
+            itemId=item.id,
             title=book.get("title", "這本書"),
             bookId=book.get("id"),
             created=bool(result.payload.get("created")),
@@ -497,7 +650,7 @@ class ChatState:
             attempts=result.attempts,
             site=BOOKTRACE_SITE,
         )
-        self._set_idle("已加入 BookTrace")
+        return True
 
     def cancel(self) -> None:
         with self.lock:
@@ -515,11 +668,9 @@ class ChatState:
             old_workspace = self.workspace
             self.workspace = create_workspace()
             self.media = {}
-            self.outcome = None
-            self.cover_path = None
-            self.cover_media_id = ""
-            self.previous_context = ""
-            self.saved = False
+            self.items = {}
+            self.last_item_id = ""
+            self.current_item_id = ""
             self.generation += 1
             self.emit("reset")
         cleanup_workspace(old_workspace)
@@ -657,11 +808,15 @@ class BookTraceHandler(BaseHTTPRequestHandler):
                 self.server.state.update_settings(self._read_json())
                 self._json({"ok": True, "settings": self.server.state.settings_payload()})
                 return
+            if parsed.path == "/api/batch":
+                self.server.state.send_batch(self._read_json())
+                self._json({"ok": True}, 202)
+                return
             if parsed.path == "/api/save":
                 payload = self._read_json()
                 if payload.get("confirmed") is not True:
                     raise UserInputError("請先確認要寫入 BookTrace。")
-                self.server.state.save_book()
+                self.server.state.save_book(_safe_text(payload.get("itemId"), 40), payload.get("all") is True)
                 self._json({"ok": True}, 202)
                 return
             if parsed.path == "/api/cancel":

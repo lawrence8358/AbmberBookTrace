@@ -18,8 +18,15 @@ class PreferenceTests(unittest.TestCase):
             BOTH,
         )
         self.assertEqual(engine, "codex")
-        self.assertEqual(models, {"codex": "gpt-5.6-sol", "claude": "claude-opus-5-5"})
+        self.assertEqual(models["codex"], "gpt-5.6-sol")
+        self.assertEqual(models["claude"], "claude-opus-5-5")
         self.assertFalse(auto_retry)
+
+    def test_claude_5x_choice_is_restored_when_available(self):
+        engines = {**BOTH, "claude-5x": "claude.exe"}
+        engine, models, _, _ = load_preferences({"engine": "claude-5x", "models": {"claude-5x": "claude-opus-5-5"}}, engines)
+        self.assertEqual(engine, "claude-5x")
+        self.assertEqual(models["claude-5x"], "claude-opus-5-5")
 
     def test_cli_default_choice_is_remembered(self):
         _, models, _, _ = load_preferences({"engine": "claude", "models": {"claude": ""}}, BOTH)

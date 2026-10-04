@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>BookTrace 小幫手</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23272724'/%3E%3Ctext x='16' y='23' font-size='20' font-family='serif' font-weight='700' text-anchor='middle' fill='white'%3EB%3C/text%3E%3C/svg%3E" />
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body>
@@ -53,6 +54,7 @@
           <div id="attachment-list" class="attachment-list"></div>
           <div class="composer-row">
             <button id="attach-button" class="composer-icon" type="button" aria-label="加入圖片" title="加入圖片">＋</button>
+            <button id="batch-button" class="composer-icon batch-open" type="button" aria-label="一次查多本書" title="一次查多本書">≡</button>
             <input id="file-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden />
             <textarea id="message-input" rows="1" placeholder="輸入書名，或直接貼上圖片…" aria-label="訊息"></textarea>
             <button id="send-button" class="send-button" type="button" aria-label="送出" title="送出">↑</button>
@@ -113,6 +115,28 @@
         <div class="dialog-actions centered">
           <button value="cancel" class="secondary">再看一下</button>
           <button id="confirm-save" value="default" class="primary">確認加入</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="batch-dialog" class="dialog batch-dialog">
+      <form method="dialog">
+        <div class="dialog-head">
+          <div>
+            <h2>一次查多本書</h2>
+            <p>每一列是一本書：可以打書名或 ISBN，也可以附一張照片。最多 10 本，會一本一本依序查證。</p>
+          </div>
+          <button class="dialog-close" value="cancel" aria-label="關閉">×</button>
+        </div>
+        <div id="batch-rows" class="batch-rows"></div>
+        <div class="batch-tools">
+          <button id="batch-add-row" class="secondary" type="button">＋ 再加一本</button>
+          <button id="batch-add-photos" class="secondary" type="button">選多張照片（一張一本）</button>
+          <input id="batch-photo-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden />
+        </div>
+        <div class="dialog-actions">
+          <button value="cancel" class="secondary">取消</button>
+          <button id="batch-start" value="default" class="primary">開始查證</button>
         </div>
       </form>
     </dialog>

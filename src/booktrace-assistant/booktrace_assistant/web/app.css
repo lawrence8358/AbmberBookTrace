@@ -268,3 +268,30 @@ button { cursor: pointer; }
   .composer-wrap { padding-inline: 8px; }
 }
 
+
+.batch-dialog { width: min(620px, calc(100% - 28px)); }
+.batch-rows { display: grid; gap: 8px; margin-top: 16px; max-height: 52vh; overflow-y: auto; }
+.batch-row { display: grid; grid-template-columns: 26px 1fr auto auto; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.batch-row .batch-no { color: var(--muted); font-size: 13px; text-align: center; }
+.batch-row input[type="text"] { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; background: white; color: var(--ink); }
+.batch-photo { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.batch-photo img { width: 38px; height: 50px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
+.batch-photo label { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.batch-remove { border: 0; background: transparent; font-size: 20px; color: var(--muted); }
+.batch-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.batch-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.refine-row { display: flex; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); }
+.refine-row input { flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; background: white; color: var(--ink); }
+.item-label { display: inline-block; margin-bottom: 4px; padding: 2px 9px; border-radius: 999px; background: var(--surface-soft); color: var(--muted); font-size: 12px; font-weight: 700; }
+@media (max-width: 560px) {
+  .batch-row { grid-template-columns: 22px 1fr auto; }
+  .batch-photo { grid-column: 2 / 4; }
+}
+.batch-summary .save-book-button { white-space: nowrap; }
+
+.candidate-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.candidate { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.candidate img { width: 54px; height: 76px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); cursor: zoom-in; }
+.candidate:not(:has(img)) { grid-template-columns: 1fr auto; }
+.candidate-body { font-size: 13px; line-height: 1.5; }
+.candidate-pick { white-space: nowrap; }
