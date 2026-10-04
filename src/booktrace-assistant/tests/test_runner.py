@@ -1,5 +1,6 @@
 import json
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from booktrace_assistant.core import ResearchRequest
@@ -8,7 +9,9 @@ from booktrace_assistant.runner import (
     _codex_event,
     build_claude_command,
     build_codex_command,
+    CLAUDE_5X_CONFIG_DIR,
     classify_retry,
+    detect_engines,
 )
 
 
@@ -29,7 +32,10 @@ class RunnerTests(unittest.TestCase):
         )
         joined = " ".join(command)
         self.assertIn("--sandbox read-only", joined)
-        self.assertIn('enabled_tools=["find_book","get_book"]', joined)
+        # --ignore-user-config makes Codex drop the -c mcp_servers.* definition (no find_book for the model).
+        self.assertNotIn("--ignore-user-config", joined)
+        self.assertIn("mcp_servers.booktrace.url=", joined)
+        self.assertIn('enabled_tools=["find_book","get_book","list_books"]', joined)
         self.assertIn("--image C:\\tmp\\book.jpg", joined)
         self.assertIn("--model gpt-5.6-luna", joined)
         self.assertNotIn("danger-full-access", joined)
@@ -42,6 +48,7 @@ class RunnerTests(unittest.TestCase):
         mcp = json.loads(command[command.index("--mcp-config") + 1])
         self.assertEqual(mcp["mcpServers"]["booktrace"]["url"], "https://booktrace.primeeagle.net/mcp")
         self.assertIn("mcp__booktrace__find_book", joined)
+        self.assertIn("mcp__booktrace__list_books", joined)
         self.assertIn("mcp__booktrace__add_book", joined)
         self.assertIn("Bash,PowerShell,Edit,Write", joined)
         self.assertIn("--model claude-haiku-4-5-20251001", joined)
@@ -129,6 +136,15 @@ class RunnerTests(unittest.TestCase):
         kinds = [kind for kind, _ in events if kind.startswith("step:")]
         self.assertEqual(kinds, ["step:think", "step:search", "step:booktrace"])
         self.assertEqual(context["summary"], "共使用約 1,234 tokens")
+
+    def test_claude_5x_engine_needs_claude_and_its_config_dir(self):
+        which = lambda name: f"C:\bin\{name}.exe"
+        with mock.patch("booktrace_assistant.runner.shutil.which", which):
+            with mock.patch.object(CLAUDE_5X_CONFIG_DIR.__class__, "is_dir", return_value=True):
+                engines = detect_engines()
+            self.assertEqual(engines["claude-5x"], engines["claude"])
+            with mock.patch.object(CLAUDE_5X_CONFIG_DIR.__class__, "is_dir", return_value=False):
+                self.assertNotIn("claude-5x", detect_engines())
 
 
 if __name__ == "__main__":

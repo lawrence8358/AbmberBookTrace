@@ -53,7 +53,12 @@ DEFAULT_MODELS = {
     "codex": "gpt-5.6-luna",
     # Haiku misidentified editions from cover photos in testing; Sonnet is the floor.
     "claude": "claude-sonnet-5",
+    "claude-5x": "claude-sonnet-5",
 }
+# "claude-5x" is the same claude CLI run against a second account's config directory.
+CLAUDE_5X_CONFIG_DIR = Path.home() / ".claude-5x"
+ENGINE_NAMES = ("codex", "claude", "claude-5x")
+ENGINE_LABELS = {"codex": "Codex", "claude": "Claude", "claude-5x": "Claude 5x"}
 
 
 def detect_engines() -> dict[str, str]:
@@ -62,6 +67,8 @@ def detect_engines() -> dict[str, str]:
         executable = shutil.which(name)
         if executable:
             found[name] = executable
+    if "claude" in found and CLAUDE_5X_CONFIG_DIR.is_dir():
+        found["claude-5x"] = found["claude"]
     return found
 
 
@@ -80,6 +87,8 @@ def build_codex_command(
     # needs no .codex/config.toml. project_doc_max_bytes=0 keeps the surrounding
     # repository's AGENTS.md (developer instructions) out of the research prompt.
     # --search and --ask-for-approval are top-level flags and must precede `exec`.
+    # No --ignore-user-config: with it Codex 0.154 silently drops the -c mcp_servers.* definition,
+    # so the model never sees find_book/get_book. Sandbox and approval are pinned by flags below.
     command = [
         executable,
         "--search",
@@ -92,13 +101,12 @@ def build_codex_command(
         "-c",
         "mcp_servers.booktrace.tool_timeout_sec=120",
         "-c",
-        f"mcp_servers.booktrace.enabled_tools={_toml_string_array(['find_book', 'get_book'])}",
+        f"mcp_servers.booktrace.enabled_tools={_toml_string_array(['find_book', 'get_book', 'list_books'])}",
         "-c",
         "mcp_servers.booktrace.required=true",
         "exec",
         "--json",
         "--ephemeral",
-        "--ignore-user-config",
         "-C",
         str(project_root),
         "--sandbox",
@@ -124,7 +132,10 @@ def build_claude_command(
     project_root: Path = PROJECT_ROOT,
     effort: str | None = None,
 ) -> list[str]:
-    readable_tools = "Read,WebSearch,WebFetch,mcp__booktrace__find_book,mcp__booktrace__get_book"
+    readable_tools = (
+        "Read,WebSearch,WebFetch,mcp__booktrace__find_book,"
+        "mcp__booktrace__get_book,mcp__booktrace__list_books"
+    )
     denied_tools = (
         "Bash,PowerShell,Edit,Write,NotebookEdit,"
         "mcp__booktrace__add_book,mcp__booktrace__update_book,"
@@ -483,6 +494,8 @@ class CliResearchRunner:
         environment = os.environ.copy()
         environment["PYTHONUTF8"] = "1"
         environment["NO_COLOR"] = "1"
+        if engine == "claude-5x":
+            environment["CLAUDE_CONFIG_DIR"] = str(CLAUDE_5X_CONFIG_DIR)
         try:
             process = subprocess.Popen(
                 command,
