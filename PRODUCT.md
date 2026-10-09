@@ -46,7 +46,7 @@ Vue 3, ASP.NET Core Web API, SQLite (Responsive Web Design for Mobile & Desktop)
   - 位置雙層記錄（位置大類 + 詳細位置，例如「房間書櫃」/「第二層左邊」）。
   - 狀態管理：在家（HOME）、借出中（BORROWED）。
   - 借出管理：借閱人（BorrowerName）、借出日期（BorrowDate）、歸還一鍵切換回「在家」。
-  - PC 端特有功能：書籍資料修改、刪除（降低手機誤操作風險）。
+  - 手機與 PC 都可修改書籍資料；刪除入口只顯示在 PC，降低手機誤操作風險。
   - 書封上傳、借閱歷史、到期及逾期站內提醒。
   - 刪除的書籍移至資源回收筒，30 天內可還原，包含封面與借閱歷史。
   - 提醒只顯示於網站，不寄送 Email、簡訊或手機推播。

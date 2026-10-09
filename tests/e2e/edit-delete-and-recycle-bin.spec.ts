@@ -61,6 +61,7 @@ test("desktop user can edit every book field, delete with confirmation, and rest
   await page.getByRole("textbox", { name: /借閱人（必填）/ }).fill("歷史借閱人");
   await page.getByRole("button", { name: "確認借出" }).click();
   await page.getByRole("button", { name: "已歸還" }).click();
+  await page.getByRole("button", { name: /展開借閱歷史/ }).click();
   await expect(page.locator('[data-history-status="RETURNED"]')).toBeVisible();
 
   const statsBeforeDelete = await page.request.get("/api/books/stats");
@@ -98,27 +99,38 @@ test("desktop user can edit every book field, delete with confirmation, and rest
   expect(afterRestore.totalCount).toBe(beforeDelete.totalCount);
 });
 
-test("mobile users do not see edit and delete controls", async ({ page }) => {
-  const title = uniqueTitle("手機隱藏操作");
+test("mobile users can edit a book while delete remains hidden", async ({ page }) => {
+  const title = uniqueTitle("手機修改書籍");
+  const updatedTitle = uniqueTitle("手機修改後書籍");
   await page.goto("/books/new");
   await page.getByLabel("書名（必填）", { exact: true }).fill(title);
   await page.getByRole("button", { name: "儲存書籍" }).click();
   await expect(page).toHaveURL(/\/books\/\d+$/);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole("button", { name: "修改資料" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "修改資料" })).toBeVisible();
   await expect(page.getByRole("button", { name: "刪除書籍" })).toHaveCount(0);
 
   const bookId = Number(new URL(page.url()).pathname.split("/").at(-1));
+  await page.getByRole("button", { name: "修改資料" }).click();
+  await expect(page).toHaveURL(`/books/${bookId}/edit`);
+  await page.getByLabel("書名（必填）", { exact: true }).fill(updatedTitle);
+  await page.getByLabel("位置", { exact: true }).fill("手機書架");
+  await page.getByRole("button", { name: "儲存修改" }).click();
+  await expect(page).toHaveURL(`/books/${bookId}`);
+  await expect(page.getByRole("heading", { name: updatedTitle, exact: true })).toBeVisible();
+  await expect(page.getByText("手機書架", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "刪除書籍" })).toHaveCount(0);
+
   const deleteResponse = await page.request.delete(`/api/books/${bookId}`);
   expect(deleteResponse.ok()).toBeTruthy();
   await page.goto("/recycle-bin");
-  const recycleCard = page.locator(".recycle-card").filter({ hasText: title });
+  const recycleCard = page.locator(".recycle-card").filter({ hasText: updatedTitle });
   await expect(recycleCard).toBeVisible();
   await expect(recycleCard.getByRole("button", { name: "還原書籍", exact: true })).toBeVisible();
   await recycleCard.getByRole("button", { name: "還原書籍", exact: true }).click();
   await expect(page).toHaveURL(`/books/${bookId}`);
-  await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: updatedTitle, exact: true })).toBeVisible();
 });
 
 test("expired deleted books are permanently cleaned up", async ({ page }) => {

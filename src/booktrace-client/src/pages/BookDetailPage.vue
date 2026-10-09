@@ -255,11 +255,11 @@ onMounted(loadBook);
       </div>
       <div class="detail-header-actions">
         <StatusBadge :status="book.status" />
-        <div class="detail-actions desktop-only">
+        <div class="detail-actions">
           <button class="button button-secondary" type="button" @click="router.push(`/books/${book.id}/edit`)">
             修改資料
           </button>
-          <button class="button button-danger" type="button" :disabled="isDeleting" @click="isDeleteOpen = true">
+          <button class="button button-danger desktop-only" type="button" :disabled="isDeleting" @click="isDeleteOpen = true">
             {{ isDeleting ? "刪除中⋯" : "刪除書籍" }}
           </button>
         </div>

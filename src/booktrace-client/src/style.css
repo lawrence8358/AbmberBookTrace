@@ -439,6 +439,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
   .journal-heading .intro { font-size: 13px; }
   .detail-header { margin-bottom: 24px; }
   .detail-header-actions { flex-direction: row; align-items: center; }
+  .detail-header-actions .detail-actions { margin-left: auto; }
   .cover-picker { flex-direction: row; align-items: flex-start; gap: 16px; }
   .cover-picker-actions .button { flex-basis: auto; }
   .cover-picker-help { overflow-wrap: anywhere; }
