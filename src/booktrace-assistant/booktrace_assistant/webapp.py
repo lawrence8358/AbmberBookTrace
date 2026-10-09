@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from .access import ACCOUNT_ENV, PASSWORD_ENV, verify_login
 from .core import (
     BOOKTRACE_SITE,
     Candidate,
@@ -157,7 +158,15 @@ class ChatState:
         self.lock = threading.RLock()
         self.token = secrets.token_urlsafe(32)
         self.engines = detect_engines()
-        self.engine, self.models, self.auto_retry, self.effort = load_preferences(_read_settings(), self.engines)
+        saved_settings = _read_settings()
+        self.engine, self.models, self.auto_retry, self.effort = load_preferences(saved_settings, self.engines)
+        # 「BookTrace 登入」：和網站相同的帳號與密碼。先用小幫手存下來的，沒有再用環境變數。
+        self.account = _safe_text(saved_settings.get("booktrace_account"), 50)
+        self.password = saved_settings.get("booktrace_password") if isinstance(saved_settings.get("booktrace_password"), str) else ""
+        if not (self.account and self.password):
+            self.account = os.environ.get(ACCOUNT_ENV, "").strip()
+            self.password = os.environ.get(PASSWORD_ENV, "")
+        self.verify_login = verify_login
         self.events: list[dict[str, Any]] = []
         self.next_event_id = 1
         # Research and saving are separate lanes: a lane is "active" (status text) while it has work,
@@ -166,7 +175,7 @@ class ChatState:
         self.status = "準備就緒"
         self.runner_factory = CliResearchRunner
         self.max_parallel = MAX_PARALLEL_RESEARCH
-        self.saver = BookSaver()
+        self.saver = BookSaver(lambda: (self.account, self.password))
         self.workspace = create_workspace()
         self.items: dict[str, BookItem] = {}
         self.last_item_id = ""
@@ -181,6 +190,10 @@ class ChatState:
         self.last_idle = "準備就緒"
         self.batch: dict[str, Any] | None = None
         self.save_queue: list[BookItem] = []
+
+    @property
+    def signed_in(self) -> bool:
+        return bool(self.account and self.password)
 
     @property
     def busy(self) -> bool:
@@ -206,6 +219,9 @@ class ChatState:
             "effort": self.effort,
             "effortOptions": EFFORT_OPTIONS,
             "autoRetry": self.auto_retry,
+            # 只告訴畫面「有沒有登入、用哪個帳號」，密碼本身不會離開這個程式。
+            "signedIn": self.signed_in,
+            "account": self.account if self.signed_in else "",
         }
 
     def snapshot(self) -> dict[str, Any]:
@@ -250,14 +266,42 @@ class ChatState:
             self.models[engine] = model
             self.auto_retry = bool(payload.get("autoRetry", True))
             self.effort = effort
-            _write_settings(
-                {
-                    "engine": self.engine,
-                    "models": dict(self.models),
-                    "effort": self.effort,
-                    "auto_retry": self.auto_retry,
-                }
-            )
+            self._persist_settings()
+            self.emit("settings", settings=self.settings_payload())
+
+    def _persist_settings(self) -> None:
+        saved: dict[str, Any] = {
+            "engine": self.engine,
+            "models": dict(self.models),
+            "effort": self.effort,
+            "auto_retry": self.auto_retry,
+        }
+        if self.signed_in:
+            saved["booktrace_account"] = self.account
+            saved["booktrace_password"] = self.password
+        _write_settings(saved)
+
+    def sign_in(self, payload: dict[str, Any]) -> None:
+        """Remember the BookTrace login once BookTrace itself confirms the account and password."""
+        account = _safe_text(payload.get("account"), 50)
+        if not account:
+            raise UserInputError("請輸入帳號。")
+        password = payload.get("password")
+        if not isinstance(password, str) or not password:
+            raise UserInputError("請輸入密碼。")
+        if len(password) > 128:
+            raise UserInputError("密碼不能超過 128 個字。")
+        self.verify_login(account, password)
+        with self.lock:
+            self.account = account
+            self.password = password
+            self._persist_settings()
+            self.emit("settings", settings=self.settings_payload())
+
+    def sign_out(self) -> None:
+        with self.lock:
+            self.account = self.password = ""
+            self._persist_settings()
             self.emit("settings", settings=self.settings_payload())
 
     def _compose_status(self, idle_status: str = "準備就緒") -> str:
@@ -697,6 +741,8 @@ class ChatState:
             return "助理還沒登入。請先完成 CLI 登入，再回來按一次送出。"
         if any(item in lower for item in ("model not found", "invalid model", "does not exist", "model is not supported")):
             return "這個帳號不能使用目前模型。請到右上角設定改選「跟隨 CLI 預設」或其他模型。"
+        if any(item in value for item in ("需要登入：", "帳號或密碼不正確", "嘗試的次數太多")):
+            return f"BookTrace 沒有接受目前的登入（{value.strip()}）。請按右上角齒輪，在「BookTrace 登入」重新輸入帳號與密碼；剛在網站換過密碼的話，這裡也要更新。"
         if "out of credits" in lower:
             return "這個助理的帳號額度已用完，需要補充額度後才能繼續。也可以到右上角設定改用另一個助理。"
         return value[-5000:]
@@ -704,6 +750,8 @@ class ChatState:
     def save_book(self, item_id: str = "", save_all: bool = False) -> None:
         """Queue confirmed books for saving. Saving runs beside research: it never waits for other books."""
         with self.lock:
+            if not self.signed_in:
+                raise UserInputError("尚未登入 BookTrace。請按右上角齒輪，在「BookTrace 登入」輸入帳號與密碼後，再加入書籍。")
             if save_all:
                 targets = [item for item in self.items.values() if self._item_can_save(item)]
                 if not targets:
@@ -946,6 +994,14 @@ class BookTraceHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/settings":
                 self.server.state.update_settings(self._read_json())
+                self._json({"ok": True, "settings": self.server.state.settings_payload()})
+                return
+            if parsed.path == "/api/login":
+                self.server.state.sign_in(self._read_json())
+                self._json({"ok": True, "settings": self.server.state.settings_payload()})
+                return
+            if parsed.path == "/api/logout":
+                self.server.state.sign_out()
                 self._json({"ok": True, "settings": self.server.state.settings_payload()})
                 return
             if parsed.path == "/api/batch":

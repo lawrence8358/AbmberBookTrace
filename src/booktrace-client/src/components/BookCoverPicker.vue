@@ -11,6 +11,8 @@ const props = withDefaults(defineProps<{
   currentCoverUrl?: string | null;
   inputIdPrefix?: string;
   disabled?: boolean;
+  /** 只看封面、不提供上傳與移除（未登入時使用）。 */
+  readonly?: boolean;
   removalDeferred?: boolean;
 }>(), {
   currentCoverUrl: null,
@@ -97,7 +99,7 @@ function validateFile(file: File): string {
     </button>
     <div v-else class="cover-preview cover-preview-empty"><span>尚未上傳封面</span></div>
 
-    <div class="cover-picker-content">
+    <div v-if="!readonly" class="cover-picker-content">
       <p class="cover-picker-title">封面圖片</p>
       <p class="cover-picker-help">可選擇 JPG、PNG、GIF 或 WebP，檔案上限 5 MB。</p>
       <div class="cover-picker-actions">

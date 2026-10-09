@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using BookTrace.Api.Auth;
 using BookTrace.Api.Contracts;
 using BookTrace.Api.Data;
 using BookTrace.Api.Storage;
@@ -8,7 +9,12 @@ using ModelContextProtocol;
 
 namespace BookTrace.Api.Services;
 
-public sealed class McpBookCatalog(BookDbContext database, CoverStorage storage, TimeProvider timeProvider) : IBookCatalog
+public sealed class McpBookCatalog(
+    BookDbContext database,
+    CoverStorage storage,
+    TimeProvider timeProvider,
+    McpWriteGuard writeGuard,
+    IHttpContextAccessor httpContextAccessor) : IBookCatalog
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -20,6 +26,7 @@ public sealed class McpBookCatalog(BookDbContext database, CoverStorage storage,
 
     public async Task<JsonElement> SaveAsync(int? id, JsonElement fields, bool fillMissingOnly, CancellationToken cancellationToken)
     {
+        await writeGuard.DemandAsync(httpContextAccessor.HttpContext, database, cancellationToken);
         try
         {
             if (id is null)
@@ -53,6 +60,7 @@ public sealed class McpBookCatalog(BookDbContext database, CoverStorage storage,
 
     public async Task<JsonElement> UploadCoverAsync(int id, byte[] content, string contentType, CancellationToken cancellationToken)
     {
+        await writeGuard.DemandAsync(httpContextAccessor.HttpContext, database, cancellationToken);
         using var stream = new MemoryStream(content);
         var file = new FormFile(stream, 0, content.Length, "cover", "mcp-cover")
         {

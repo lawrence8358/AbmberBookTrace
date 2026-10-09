@@ -16,6 +16,7 @@ import AppIcon from "../components/AppIcon.vue";
 import BookCoverPicker from "../components/BookCoverPicker.vue";
 import ConfirmDialog from "../components/ConfirmDialog.vue";
 import StatusBadge from "../components/StatusBadge.vue";
+import { canEdit } from "../auth";
 
 const route = useRoute();
 const router = useRouter();
@@ -255,7 +256,7 @@ onMounted(loadBook);
       </div>
       <div class="detail-header-actions">
         <StatusBadge :status="book.status" />
-        <div class="detail-actions">
+        <div v-if="canEdit" class="detail-actions">
           <button class="button button-secondary" type="button" @click="router.push(`/books/${book.id}/edit`)">
             修改資料
           </button>
@@ -274,6 +275,7 @@ onMounted(loadBook);
         input-id-prefix="detail-book-cover"
         :current-cover-url="book.coverUrl"
         :disabled="isCoverSaving"
+        :readonly="!canEdit"
         @update:model-value="replaceCover"
         @remove="removeCover"
       />
@@ -310,7 +312,7 @@ onMounted(loadBook);
           <h2 id="borrowing-title">借閱狀態</h2>
         </div>
         <button
-          v-if="book.status === 'HOME'"
+          v-if="canEdit && book.status === 'HOME'"
           class="button button-primary"
           type="button"
           @click="openBorrowForm"
@@ -318,7 +320,7 @@ onMounted(loadBook);
           借出
         </button>
         <button
-          v-else
+          v-else-if="canEdit"
           class="button button-secondary"
           type="button"
           :disabled="isReturning"
@@ -330,7 +332,7 @@ onMounted(loadBook);
 
       <p v-if="borrowError" class="feedback feedback-error" role="alert">{{ borrowError }}</p>
 
-      <form v-if="isBorrowFormOpen" class="borrow-form" @submit.prevent="submitBorrow">
+      <form v-if="isBorrowFormOpen && canEdit" class="borrow-form" @submit.prevent="submitBorrow">
         <h3>借出書籍</h3>
         <label class="field">
           <span>借閱人（必填）</span>

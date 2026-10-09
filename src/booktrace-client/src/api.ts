@@ -96,9 +96,24 @@ export interface BorrowBookInput {
   clearDueDate: boolean;
 }
 
+export interface AuthSession {
+  authenticated: boolean;
+  userName: string | null;
+  /** 資料庫裡還沒有任何帳號，要讓使用者建立第一個帳號。 */
+  setupRequired: boolean;
+  idleTimeoutSeconds: number;
+}
+
 interface ApiErrorBody {
   message?: string;
   errors?: Record<string, string>;
+}
+
+let unauthorizedHandler: (() => void) | null = null;
+
+/** 伺服器回 401（登入已失效）時通知畫面切回未登入。登入、登出本身不算。 */
+export function onUnauthorized(handler: () => void) {
+  unauthorizedHandler = handler;
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -109,6 +124,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
+    if (response.status === 401 && !path.startsWith("/api/auth/")) {
+      unauthorizedHandler?.();
+    }
+
     const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
     throw new Error(body.message ?? "目前無法完成操作，請稍後再試。");
   }
@@ -216,4 +235,35 @@ export function uploadBookCover(id: number, file: File): Promise<Book> {
 
 export function removeBookCover(id: number): Promise<void> {
   return request<void>(`/api/books/${id}/cover`, { method: "DELETE" });
+}
+
+export function getSession(options: { timeoutMs?: number } = {}): Promise<AuthSession> {
+  return request<AuthSession>("/api/auth/session", {
+    signal: options.timeoutMs ? AbortSignal.timeout(options.timeoutMs) : undefined,
+  });
+}
+
+export function setupAccount(userName: string, password: string): Promise<AuthSession> {
+  return request<AuthSession>("/api/auth/setup", {
+    method: "POST",
+    body: JSON.stringify({ userName, password }),
+  });
+}
+
+export function login(userName: string, password: string): Promise<AuthSession> {
+  return request<AuthSession>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ userName, password }),
+  });
+}
+
+export function logout(): Promise<void> {
+  return request<void>("/api/auth/logout", { method: "POST" });
+}
+
+export function changePassword(currentPassword: string, newPassword: string): Promise<AuthSession> {
+  return request<AuthSession>("/api/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
 }

@@ -125,3 +125,6 @@ playwright/.cache/
 # ASP.NET static frontend build output
 src/BookTrace.Api/wwwroot/
 src/BookTrace.Api/uploads/
+
+# 本機啟動腳本留下的記錄檔（可能含請求與設定資訊，不要簽入）
+.scratch/*.log

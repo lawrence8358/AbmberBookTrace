@@ -94,6 +94,7 @@ class BatchTests(unittest.TestCase):
         state.runner_factory = lambda: state.runner
         state.max_parallel = parallel
         state.saver = FakeSaver()
+        state.account, state.password = "reader", "test-password"
         self.addCleanup(cleanup_workspace, state.workspace)
         return state
 

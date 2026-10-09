@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers";
 
 for (const width of [1440, 390]) {
   test.describe(`shared header at ${width}px`, () => {

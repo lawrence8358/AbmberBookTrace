@@ -1,5 +1,4 @@
-import { expect, test } from "@playwright/test";
-import { uniqueTitle } from "./helpers";
+import { uniqueTitle, expect, test } from "./helpers";
 
 const validPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",

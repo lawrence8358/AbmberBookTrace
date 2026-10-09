@@ -3,6 +3,7 @@ import argparse
 import base64
 import datetime
 import json
+import os
 import pathlib
 import re
 import sys
@@ -57,6 +58,17 @@ class McpClient:
             "MCP-Protocol-Version": "2025-11-25",
             "User-Agent": "booktrace-enrich/1.0",
         }
+        # BookTrace 的新增與修改使用和網站相同的帳號密碼；從環境變數讀，不放在命令列參數。
+        account = os.environ.get("BOOKTRACE_USERNAME", "").strip()
+        password = os.environ.get("BOOKTRACE_PASSWORD", "")
+        if account or password:
+            if not (account and password):
+                raise ValueError("寫入 BookTrace 需要同時設定 BOOKTRACE_USERNAME 與 BOOKTRACE_PASSWORD")
+            local = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+            if parsed.scheme != "https" and not local:
+                raise ValueError("密碼只能透過 HTTPS 傳送（本機測試網址除外）")
+            credentials = base64.b64encode((account + ":" + password).encode("utf-8")).decode("ascii")
+            self.headers["Authorization"] = "Basic " + credentials
         self.counter = 0
         result = self.rpc(
             "initialize",

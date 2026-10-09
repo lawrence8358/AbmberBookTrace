@@ -11,6 +11,7 @@ import {
 import AppIcon from "../components/AppIcon.vue";
 import PageHeading from "../components/PageHeading.vue";
 import StatusBadge from "../components/StatusBadge.vue";
+import { canEdit, requestLogin } from "../auth";
 import { librarySearch } from "../librarySearch";
 
 const books = ref<Book[]>([]);
@@ -118,7 +119,7 @@ onMounted(() => {
           {{ filter.label }}
         </button>
       </div>
-      <RouterLink class="button button-secondary" to="/books/new">＋ 新增書籍</RouterLink>
+      <RouterLink v-if="canEdit" class="button button-secondary" to="/books/new">＋ 新增書籍</RouterLink>
     </div>
   </section>
 
@@ -180,9 +181,11 @@ onMounted(() => {
     <img class="empty-reading" src="/images/reading-girl.webp" width="768" height="512" alt="" />
     <h2 id="empty-library-title">{{ hasActiveFilter ? "找不到符合的書籍" : "目前還沒有藏書" }}</h2>
     <p v-if="hasActiveFilter">試試其他書名、作者、ISBN 或狀態篩選。</p>
-    <p v-else>先登錄一本書，之後就能隨時找到它的位置。</p>
+    <p v-else-if="canEdit">先登錄一本書，之後就能隨時找到它的位置。</p>
+    <p v-else>登入後就能新增第一本書。</p>
     <button v-if="hasActiveFilter" class="button button-secondary" type="button" @click="clearFilters">清除搜尋與篩選</button>
-    <RouterLink v-else class="button button-primary" to="/books/new">新增第一本書</RouterLink>
+    <RouterLink v-else-if="canEdit" class="button button-primary" to="/books/new">新增第一本書</RouterLink>
+    <button v-else class="button button-primary" type="button" @click="requestLogin()">登入</button>
   </section>
 
   <section v-else class="library-results" aria-labelledby="library-results-title">

@@ -24,6 +24,12 @@ const effortSelect = document.querySelector("#effort-select");
 const statusElapsed = document.querySelector("#status-elapsed");
 const showProgressButton = document.querySelector("#show-progress");
 const modelBadge = document.querySelector("#model-badge");
+const loginAccount = document.querySelector("#login-account");
+const loginPassword = document.querySelector("#login-password");
+const loginStatus = document.querySelector("#login-status");
+const loginMessage = document.querySelector("#login-message");
+const signInButton = document.querySelector("#sign-in");
+const signOutButton = document.querySelector("#sign-out");
 const toast = document.querySelector("#toast");
 
 let pendingFiles = [];
@@ -285,6 +291,7 @@ function renderOutcome(outcome, attempts, itemId) {
     button.disabled = true;
     button.textContent = "加入 BookTrace";
     button.addEventListener("click", () => {
+      if (!requireBookTraceLogin()) return;
       document.querySelector("#confirm-text").textContent = `確認要把《${outcome.book.title || "這本書"}》加入或補齊 BookTrace 嗎？`;
       pendingSave = { itemId };
       confirmDialog.showModal();
@@ -397,6 +404,7 @@ function addBatchSummary(event) {
     all.className = "save-book-button";
     all.textContent = `全部加入（${unsaved} 本）`;
     all.addEventListener("click", () => {
+      if (!requireBookTraceLogin()) return;
       pendingSave = { all: true };
       document.querySelector("#confirm-text").textContent = `確認要把這 ${unsaved} 本書都加入或補齊 BookTrace 嗎？（只會寫入封面已確認的書）`;
       confirmDialog.showModal();
@@ -768,7 +776,66 @@ function renderSettings() {
   const engineName = settings.engines.find((item) => item.value === settings.engine)?.label || settings.engine;
   const model = modelLabel(settings.engine, settings.models[settings.engine] || "").split("·")[0].trim();
   modelBadge.textContent = `${engineName} · ${model} · 思考：${effortLabel(settings.effort || "")}`;
+  loginStatus.textContent = settings.signedIn
+    ? `已用 ${settings.account} 登入，可以把書加入 BookTrace。`
+    : "尚未登入。查書不需要登入，但加入 BookTrace 要用和網站相同的帳號與密碼登入。";
+  if (!loginAccount.value && settings.account) loginAccount.value = settings.account;
+  signInButton.textContent = settings.signedIn ? "重新登入" : "登入";
+  signOutButton.classList.toggle("hidden", !settings.signedIn);
 }
+
+function showLoginMessage(text, isError = false) {
+  loginMessage.textContent = text;
+  loginMessage.classList.toggle("is-error", isError);
+}
+
+// 加入 BookTrace 要先登入：還沒登入就直接帶使用者到登入欄位。
+function requireBookTraceLogin() {
+  if (!settings || settings.signedIn) return true;
+  renderSettings();
+  showLoginMessage("加入 BookTrace 前，請先輸入帳號與密碼登入。", true);
+  settingsDialog.showModal();
+  loginPassword.focus();
+  return false;
+}
+
+async function signInToBookTrace() {
+  const account = loginAccount.value.trim();
+  const password = loginPassword.value;
+  if (!password) {
+    showLoginMessage("請輸入密碼。", true);
+    loginPassword.focus();
+    return;
+  }
+  signInButton.disabled = true;
+  showLoginMessage("正在向 BookTrace 確認帳號與密碼…");
+  try {
+    const data = await api("/api/login", { method: "POST", body: JSON.stringify({ account, password }) });
+    settings = data.settings;
+    loginPassword.value = "";
+    renderSettings();
+    showLoginMessage("已登入 BookTrace。");
+  } catch (error) {
+    showLoginMessage(error.message, true);
+  } finally {
+    signInButton.disabled = false;
+  }
+}
+
+signInButton.addEventListener("click", signInToBookTrace);
+[loginAccount, loginPassword].forEach((field) => field.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  signInToBookTrace();
+}));
+signOutButton.addEventListener("click", async () => {
+  try {
+    const data = await api("/api/logout", { method: "POST", body: "{}" });
+    settings = data.settings;
+    renderSettings();
+    showLoginMessage("已登出 BookTrace。");
+  } catch (error) { showLoginMessage(error.message, true); }
+});
 
 function fillModelOptions(engine, selected) {
   modelSelect.textContent = "";
@@ -791,8 +858,14 @@ function fillModelOptions(engine, selected) {
 
 engineSelect.addEventListener("change", () => fillModelOptions(engineSelect.value, settings.models[engineSelect.value] || ""));
 modelSelect.addEventListener("change", () => customModelWrap.classList.toggle("hidden", modelSelect.value !== "__custom__"));
-document.querySelector("#open-settings").addEventListener("click", () => { renderSettings(); settingsDialog.showModal(); });
-modelBadge.addEventListener("click", () => { renderSettings(); settingsDialog.showModal(); });
+function openSettings() {
+  renderSettings();
+  showLoginMessage("");
+  loginPassword.value = "";
+  settingsDialog.showModal();
+}
+document.querySelector("#open-settings").addEventListener("click", openSettings);
+modelBadge.addEventListener("click", openSettings);
 
 document.querySelector("#save-settings").addEventListener("click", async (event) => {
   event.preventDefault();

@@ -7,6 +7,7 @@ public sealed class BookDbContext(DbContextOptions<BookDbContext> options) : DbC
 {
     public DbSet<Book> Books => Set<Book>();
     public DbSet<BorrowingRecord> BorrowingRecords => Set<BorrowingRecord>();
+    public DbSet<AppUser> Users => Set<AppUser>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -27,6 +28,13 @@ public sealed class BookDbContext(DbContextOptions<BookDbContext> options) : DbC
                 .WithOne(record => record.Book)
                 .HasForeignKey(record => record.BookId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AppUser>(entity =>
+        {
+            entity.Property(user => user.UserName).IsRequired().HasMaxLength(50).UseCollation("NOCASE");
+            entity.Property(user => user.PasswordHash).IsRequired().HasMaxLength(500);
+            entity.HasIndex(user => user.UserName).IsUnique();
         });
 
         modelBuilder.Entity<BorrowingRecord>(entity =>

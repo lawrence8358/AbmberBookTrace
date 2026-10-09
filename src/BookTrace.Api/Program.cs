@@ -1,9 +1,11 @@
+using BookTrace.Api.Auth;
 using BookTrace.Api.Services;
 using BookTrace.Mcp;
 using BookTrace.Api.Contracts;
 using BookTrace.Api.Data;
 using BookTrace.Api.Models;
 using BookTrace.Api.Storage;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 
@@ -11,6 +13,8 @@ var builder = WebApplication.CreateBuilder(args);
 var mcpEnabled = builder.Configuration.GetValue("Mcp:Enabled", true);
 if (mcpEnabled)
 {
+    builder.Services.AddHttpContextAccessor();
+    builder.Services.AddSingleton<McpWriteGuard>();
     builder.Services.AddScoped<IBookCatalog, McpBookCatalog>();
     builder.Services.AddBookTraceMcp();
 }
@@ -18,6 +22,7 @@ if (mcpEnabled)
 var connectionString = builder.Configuration.GetConnectionString("BookTrace")
     ?? "Data Source=booktrace.db";
 builder.Services.AddDbContext<BookDbContext>(options => options.UseSqlite(connectionString));
+builder.Services.AddBookTraceAuth(builder.Configuration);
 builder.Services.AddHostedService<RecycleBinCleanupService>();
 builder.Services.AddSingleton<CoverStorage>();
 builder.Services.AddSingleton<TimeProvider>(_ =>
@@ -74,9 +79,14 @@ app.UseStaticFiles(new StaticFileOptions
     },
 });
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapGet("/health", () => Results.Ok(new { status = "ok", mcpEnabled }));
 if (mcpEnabled) app.MapBookTraceMcp();
 else app.Map("/mcp", () => Results.NotFound());
+
+app.MapAuthEndpoints();
 
 app.MapGet("/api/books", BookOperations.ListAsync);
 
@@ -186,9 +196,9 @@ app.MapGet("/api/reminders", async (
         .ToList());
 });
 
-app.MapPost("/api/books", BookOperations.CreateAsync);
+app.MapPost("/api/books", BookOperations.CreateAsync).RequireAuthorization(AuthPolicies.CanEdit);
 
-app.MapPut("/api/books/{id:int}", BookOperations.UpdateAsync);
+app.MapPut("/api/books/{id:int}", BookOperations.UpdateAsync).RequireAuthorization(AuthPolicies.CanEdit);
 
 app.MapDelete("/api/books/{id:int}", async (
     int id,
@@ -213,7 +223,7 @@ app.MapDelete("/api/books/{id:int}", async (
     return Results.Ok(RecycleBinBookResponse.From(
         book,
         book.BorrowingRecords.SingleOrDefault(record => record.ReturnedAtUtc == null)));
-});
+}).RequireAuthorization(AuthPolicies.CanEdit);
 
 app.MapGet("/api/recycle-bin", async (
     BookDbContext database,
@@ -267,10 +277,12 @@ app.MapPost("/api/recycle-bin/{id:int}/restore", async (
     return Results.Ok(BookResponse.From(
         book,
         book.BorrowingRecords.SingleOrDefault(record => record.ReturnedAtUtc == null)));
-});
+}).RequireAuthorization(AuthPolicies.CanEdit);
 
 if (app.Environment.IsEnvironment("Playwright"))
 {
+    app.MapAuthTestEndpoints();
+
     app.MapPost("/api/test/recycle-bin/{id:int}/age", async (
         int id,
         AgeRecycleBinRequest request,
@@ -345,7 +357,7 @@ app.MapPost("/api/books/{id:int}/borrow", async (
     await database.SaveChangesAsync(cancellationToken);
 
     return Results.Ok(BookResponse.From(book, record));
-});
+}).RequireAuthorization(AuthPolicies.CanEdit);
 
 app.MapPost("/api/books/{id:int}/return", async (
     int id,
@@ -376,9 +388,11 @@ app.MapPost("/api/books/{id:int}/return", async (
     await database.SaveChangesAsync(cancellationToken);
 
     return Results.Ok(BookResponse.From(book));
-});
+}).RequireAuthorization(AuthPolicies.CanEdit);
 
-app.MapPost("/api/books/{id:int}/cover", BookOperations.UploadCoverAsync).DisableAntiforgery();
+app.MapPost("/api/books/{id:int}/cover", BookOperations.UploadCoverAsync)
+    .DisableAntiforgery()
+    .RequireAuthorization(AuthPolicies.CanEdit);
 
 app.MapDelete("/api/books/{id:int}/cover", async (
     int id,
@@ -408,7 +422,7 @@ app.MapDelete("/api/books/{id:int}/cover", async (
     storage.Delete(oldName);
 
     return Results.NoContent();
-});
+}).RequireAuthorization(AuthPolicies.CanEdit);
 
 app.MapFallbackToFile("index.html");
 

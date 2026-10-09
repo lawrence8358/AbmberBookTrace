@@ -5,6 +5,7 @@ import { getRecycleBin, restoreBook, type RecycleBinBook } from "../api";
 import StatusBadge from "../components/StatusBadge.vue";
 import PageHeading from "../components/PageHeading.vue";
 import AppIcon from "../components/AppIcon.vue";
+import { canEdit } from "../auth";
 
 const router = useRouter();
 const books = ref<RecycleBinBook[]>([]);
@@ -89,6 +90,7 @@ onMounted(() => {
         <div class="recycle-card-actions">
           <StatusBadge :status="book.status" />
           <button
+            v-if="canEdit"
             class="button button-primary"
             type="button"
             :disabled="restoringId === book.id"

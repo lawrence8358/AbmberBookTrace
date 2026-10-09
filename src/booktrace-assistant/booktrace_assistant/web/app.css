@@ -231,11 +231,17 @@ button { cursor: pointer; }
 .dialog p { margin: 5px 0 0; color: var(--muted); line-height: 1.55; }
 .dialog-close { border: 0; background: transparent; font-size: 26px; color: var(--muted); }
 .settings-dialog label:not(.toggle-row) { display: grid; gap: 6px; margin-top: 18px; font-size: 13px; font-weight: 700; }
-.settings-dialog select, .settings-dialog input[type="text"] { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: white; color: var(--ink); }
+.settings-dialog select, .settings-dialog input[type="text"], .settings-dialog input[type="password"] { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: white; color: var(--ink); }
 .toggle-row { display: flex; align-items: flex-start; gap: 10px; margin-top: 20px; padding: 12px; border-radius: 12px; background: var(--surface-soft); }
 .toggle-row input { margin-top: 4px; }
 .toggle-row strong, .toggle-row small { display: block; }
 .toggle-row small { color: var(--muted); margin-top: 2px; }
+.login-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+.login-section h3 { margin: 0; font-size: 15px; }
+.login-section .field-hint { margin-top: 4px; }
+.login-message { min-height: 1.4em; margin: 8px 0 0; font-size: 13px; }
+.login-message.is-error { color: var(--danger); }
+.login-actions { display: flex; gap: 8px; margin-top: 4px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
 .split-actions { justify-content: space-between; align-items: center; }
 .secondary { border: 0; border-radius: 10px; background: var(--surface-soft); color: var(--ink); padding: 10px 14px; }

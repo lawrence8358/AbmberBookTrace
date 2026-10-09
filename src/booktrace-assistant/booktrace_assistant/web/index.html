@@ -97,6 +97,23 @@
             <small>遇到 5 小時額度、服務忙碌或暫時斷線時持續等待</small>
           </span>
         </label>
+        <section class="login-section" aria-labelledby="booktrace-login-title">
+          <h3 id="booktrace-login-title">BookTrace 登入</h3>
+          <p id="login-status" class="field-hint"></p>
+          <label>
+            <span>帳號</span>
+            <input id="login-account" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" />
+          </label>
+          <label>
+            <span>密碼</span>
+            <input id="login-password" type="password" autocomplete="off" />
+          </label>
+          <p id="login-message" class="login-message" role="status"></p>
+          <div class="login-actions">
+            <button id="sign-in" type="button" class="secondary">登入</button>
+            <button id="sign-out" type="button" class="secondary hidden">登出</button>
+          </div>
+        </section>
         <div class="dialog-actions split-actions">
           <button id="shutdown-app" class="danger-quiet" type="button">結束小幫手</button>
           <div>

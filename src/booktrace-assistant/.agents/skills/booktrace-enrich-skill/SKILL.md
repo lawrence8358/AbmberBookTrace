@@ -7,6 +7,8 @@ description: 使用者提供書名、ISBN 或書本照片，並要求查證、�
 
 使用專案中名為 `booktrace` 的 MCP server。正式站台是 `https://booktrace.primeeagle.net/`，Streamable HTTP endpoint 是 `https://booktrace.primeeagle.net/mcp`。
 
+寫入 BookTrace（新增、補齊資料、上傳封面）要用和網站相同的帳號與密碼登入：先設定環境變數 `BOOKTRACE_USERNAME` 與 `BOOKTRACE_PASSWORD`，helper 會以 HTTP Basic 帶給 BookTrace；查詢不需要登入。沒有登入資料或帳號密碼不正確時，寫入會被 BookTrace 拒絕，請回報使用者，不要重試。
+
 完成條件：版本已核對、資料已保存、封面可讀取，且以 `get_book` 讀回驗證。若任一步驟未完成，指出已完成內容、書籍 ID 與待補步驟。
 
 ## 核對資料

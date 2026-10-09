@@ -25,6 +25,16 @@ pnpm start
 
 VS Code 會推薦安裝 C# Dev Kit 與 Vue 擴充套件；第一次使用前仍需先安裝前端依賴。
 
+## 登入與權限
+
+網站只有一個登入帳號，帳號與密碼由你自己建立，程式不內建任何預設帳號。
+
+- **第一次使用時自己建立帳號**：資料庫裡還沒有任何帳號時，頭像選單的「登入」會變成「建立帳號」畫面，輸入帳號與密碼（密碼至少 4 個字，不需要大小寫或符號）後會自動登入。建立之後，這個畫面就不能再建立新帳號。**對外站台上線後請立刻自己建立帳號**，否則第一位開啟網站的人就能建立。
+- **沒登入只能瀏覽與搜尋**：新增、修改、刪除、借出、歸還、還原書籍與上傳／移除封面都需要登入。畫面會隱藏這些按鈕，**後端也會用 `401` 擋下沒有登入的 API 請求**（讀取類 API 不需要登入）。登入／登出在頭像選單裡。
+- **閒置 1 小時自動登出**：1 小時內沒有任何點擊、按鍵或換頁，就會安靜地登出，不會提醒。網站與伺服器都用同一個時限，可用 `Auth:IdleTimeoutMinutes` 調整。
+- 連續登入失敗 5 次，會暫停登入 5 分鐘。
+- 密碼只保存雜湊值（資料庫的 `Users` 資料表）。**忘記密碼或想換帳號**：從 `Users` 資料表刪除這個帳號，下一次按「登入」又會出現建立帳號畫面。登入後可以在頭像選單選「變更密碼」（新密碼不能和目前的密碼相同）。
+
 ## 測試
 
 後端整合測試使用獨立暫存資料庫與圖片目錄，包含圖片持久化、靜態快取、HTTP MCP 與重複新增檢查：
@@ -64,6 +74,21 @@ API 的 `appsettings.json` 預設開啟 MCP：
   }
 }
 ```
+
+**MCP 的寫入使用和網站相同的登入**：`add_book`、`update_book`、`upload_book_cover` 會檢查 `Authorization: Basic base64(帳號:密碼)`，帳號與密碼就是網站登入用的那一組，由同一份 `Users` 資料驗證，**伺服器不需要額外設定**；網站還沒有建立帳號時，MCP 也不能寫入。`list_books`、`find_book`、`get_book` 不需要登入。規則和網站一致：
+
+- 在網站變更密碼後，MCP 客戶端也要改用新密碼。
+- 密碼錯誤會被拒絕；連續失敗 5 次會暫停 MCP 寫入 5 分鐘（MCP 與網站登入各自計算，不會互相鎖住）。
+- 每次寫入都會帶著密碼，請只透過 HTTPS 使用（本機測試網址除外）。
+
+MCP 客戶端需要加上這個 HTTP 標頭。例如 Claude Code（PowerShell）：
+
+```powershell
+$auth = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("帳號:密碼"))
+claude mcp add --transport http booktrace https://booktrace.primeeagle.net/mcp --header "Authorization: Basic $auth"
+```
+
+其他客戶端請在設定裡加入同樣的 `Authorization` 標頭。小幫手則在設定的「BookTrace 登入」輸入帳號與密碼即可（見 [小幫手說明](src/booktrace-assistant/README.md)）。
 
 依原本方式 `pnpm start` 啟動網站後，本機 LLM 服務連線到 `http://localhost:5000/mcp`；對外站台的 API 基底網址為 `https://booktrace.primeeagle.net/`，MCP 端點為 `https://booktrace.primeeagle.net/mcp`。設定 `Mcp:Enabled=false` 後重啟，可關閉 MCP（回傳 404）。`/health` 包含 `mcpEnabled`。
 

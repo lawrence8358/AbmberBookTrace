@@ -9,8 +9,9 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
+from .access import ACCOUNT_ENV, PASSWORD_ENV
 from .core import BOOKTRACE_ENDPOINT, PROJECT_ROOT, PersonalFields, ResearchBook, UserInputError, validate_image
 from .runner import EventCallback, classify_retry
 
@@ -25,7 +26,9 @@ class SaveResult:
 
 
 class BookSaver:
-    def __init__(self) -> None:
+    def __init__(self, credentials: Callable[[], tuple[str, str]] | None = None) -> None:
+        # 帳號與密碼由小幫手的「BookTrace 登入」提供；沒有時才看電腦上的環境變數。
+        self.credentials = credentials or (lambda: ("", ""))
         self.cancel_event = threading.Event()
         self._process: subprocess.Popen[str] | None = None
 
@@ -107,6 +110,11 @@ class BookSaver:
             command.append("--replace-cover")
         environment = os.environ.copy()
         environment["PYTHONUTF8"] = "1"
+        account, password = self.credentials()
+        if password:
+            # 用環境變數而不是命令列參數，密碼才不會出現在程序清單裡。
+            environment[ACCOUNT_ENV] = account
+            environment[PASSWORD_ENV] = password
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         try:
             process = subprocess.Popen(

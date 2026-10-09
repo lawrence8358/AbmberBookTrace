@@ -1,5 +1,4 @@
-import { expect, test } from "@playwright/test";
-import { useFixedClock } from "./helpers";
+import { useFixedClock, expect, test } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 

@@ -49,6 +49,17 @@
 
 登入失敗、模型不存在、圖片格式錯誤、版本歧義等需要人處理的問題不會無限重試。BookTrace 保存若因暫時網路問題中斷，也會沿用 helper 的查重流程安全重試。
 
+## 登入 BookTrace
+
+查書不需要登入，但「加入 BookTrace」會新增資料，要用**和 BookTrace 網站相同的帳號與密碼**登入：
+
+1. 按右上角齒輪，在「BookTrace 登入」輸入帳號與密碼，按「登入」。小幫手會像網站一樣向 BookTrace 登入一次確認，確認可以才會記住。
+2. 之後按「加入 BookTrace」就能直接寫入。想換帳號或密碼按「重新登入」，想清除按「登出」。
+3. 還沒登入就按「加入 BookTrace」，會直接帶到登入欄位。
+4. 網站還沒有建立帳號時，請先到網站建立帳號。**在網站換過密碼後，這裡也要重新登入一次。**
+
+密碼只存在這台電腦的 `.booktrace-ui-settings.json`（已被 Git 忽略），畫面與對話都不會顯示它；也可以改用環境變數 `BOOKTRACE_PASSWORD`（帳號用 `BOOKTRACE_USERNAME`）。寫入時它只會以環境變數交給保存工具，不會出現在命令列，而且只在 HTTPS（或本機網址）下才會送出。查證階段的 AI 只能讀取，不會拿到密碼。
+
 ## 第一次使用前
 
 電腦需有 Python 3，以及至少一個已安裝並登入的 CLI：
@@ -81,6 +92,8 @@ BookTrace MCP 的網址（`https://booktrace.primeeagle.net/mcp`）由程式直�
 ```powershell
 python booktrace_assistant/enrich_book.py --endpoint https://booktrace.primeeagle.net/mcp --metadata book.json --cover cover.jpg
 ```
+
+寫入前先設定環境變數 `BOOKTRACE_PASSWORD`（見上方「登入 BookTrace」）。
 
 - `book.json` 至少包含 `title` 與實際查證過的 `sources` 網址陣列；其餘欄位見 BookTrace MCP 的 `add_book`。
 - 預設只補空欄且保留已有封面；`--correct` 允許更正既有值，`--replace-cover` 替換封面。

@@ -31,6 +31,7 @@ public sealed class StorageAndMcpTests : IDisposable
     {
         using var api = Api();
         using var client = api.CreateClient();
+        await TestAuth.SignInAsync(client);
         var created = await client.PostAsJsonAsync("/api/books", new { title = "封面測試" });
         var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
         async Task<string> Upload()
@@ -80,6 +81,7 @@ public sealed class StorageAndMcpTests : IDisposable
         using (var api = Api())
         {
             using var client = api.CreateClient();
+            await TestAuth.SignInAsync(client);
             var created = await client.PostAsJsonAsync("/api/books", new { title = "持久化封面" });
             var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
             using var form = new MultipartFormDataContent();
@@ -115,12 +117,14 @@ public sealed class StorageAndMcpTests : IDisposable
     {
         using var api = Api();
         using var apiClient = api.CreateClient();
+        await TestAuth.SignInAsync(apiClient);
         using var client = api.CreateClient();
         async Task<JsonElement> Rpc(string method, object parameters)
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp");
             request.Headers.Accept.ParseAdd("application/json, text/event-stream");
             request.Headers.Add("MCP-Protocol-Version", "2025-11-25");
+            request.Headers.Authorization = TestAuth.Basic(TestAuth.UserName, TestAuth.Password);
             request.Content = JsonContent.Create(new { jsonrpc = "2.0", id = 1, method, @params = parameters });
             var response = await client.SendAsync(request);
             var body = await response.Content.ReadAsStringAsync();
@@ -167,11 +171,70 @@ public sealed class StorageAndMcpTests : IDisposable
         Assert.False(ToolResult(await Rpc("tools/call", new { name = "find_book", arguments = new { isbn = "9781234567890" } })).GetProperty("exists").GetBoolean());
     }
 
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("Basic", "test-reader:wrong-password")]
+    [InlineData("Basic", "someone-else:booktrace-test")]
+    [InlineData("Basic", "not-base64-at-all")]
+    [InlineData("Bearer", "booktrace-test")]
+    public async Task McpWritesAreRejectedWithoutTheSiteLoginButReadsStayOpen(string? scheme, string? credentials)
+    {
+        using var api = Api();
+        using var apiClient = api.CreateClient();
+        await TestAuth.SignInAsync(apiClient);
+        var created = await apiClient.PostAsJsonAsync("/api/books", new { title = "既有書籍" });
+        var id = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt32();
+        using var client = api.CreateClient();
+        System.Net.Http.Headers.AuthenticationHeaderValue? authorization = null;
+        if (scheme == "Basic" && credentials!.Contains(':'))
+        {
+            var separator = credentials.IndexOf(':');
+            authorization = TestAuth.Basic(credentials[..separator], credentials[(separator + 1)..]);
+        }
+        else if (scheme is not null)
+        {
+            authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(scheme, credentials);
+        }
+
+        Assert.False((await TestAuth.McpCallAsync(client, "list_books", new { }, authorization)).IsError);
+        Assert.True((await TestAuth.McpCallAsync(client, "add_book", new { title = "未授權新增" }, authorization)).IsError);
+        Assert.True((await TestAuth.McpCallAsync(client, "update_book", new { id, notes = "未授權修改" }, authorization)).IsError);
+        Assert.True((await TestAuth.McpCallAsync(client, "upload_book_cover", new { id, imageBase64 = Convert.ToBase64String(Png), contentType = "image/png" }, authorization)).IsError);
+
+        var books = await apiClient.GetFromJsonAsync<JsonElement>("/api/books");
+        Assert.Equal(1, books.GetArrayLength());
+        Assert.Equal(JsonValueKind.Null, books[0].GetProperty("notes").ValueKind);
+        Assert.Equal(JsonValueKind.Null, books[0].GetProperty("coverUrl").ValueKind);
+    }
+
+    [Fact]
+    public async Task McpWritesNeedAnAccountAndFollowPasswordChanges()
+    {
+        using var api = Api();
+        using var client = api.CreateClient();
+        var login = TestAuth.Basic(TestAuth.UserName, TestAuth.Password);
+
+        // 網站還沒有任何帳號：誰都不能透過 MCP 寫入。
+        Assert.True((await TestAuth.McpCallAsync(client, "add_book", new { title = "沒有帳號" }, login)).IsError);
+
+        using var site = api.CreateClient();
+        await TestAuth.SignInAsync(site);
+        var added = await TestAuth.McpCallAsync(client, "add_book", new { title = "有帳號可以新增" }, TestAuth.Basic(TestAuth.UserName.ToUpperInvariant(), TestAuth.Password));
+        Assert.False(added.IsError, added.Text);
+
+        var changed = await site.PostAsJsonAsync("/api/auth/change-password", new { currentPassword = TestAuth.Password, newPassword = "another-password" });
+        changed.EnsureSuccessStatusCode();
+        Assert.True((await TestAuth.McpCallAsync(client, "add_book", new { title = "舊密碼" }, login)).IsError);
+        Assert.False((await TestAuth.McpCallAsync(client, "add_book", new { title = "新密碼" }, TestAuth.Basic(TestAuth.UserName, "another-password"))).IsError);
+        Assert.Equal(2, (await site.GetFromJsonAsync<JsonElement>("/api/books")).GetArrayLength());
+    }
+
     [Fact]
     public async Task ApiDatesCanBeEditedAndClearedWithoutTimezoneConversion()
     {
         using var api = Api();
         using var client = api.CreateClient();
+        await TestAuth.SignInAsync(client);
         var response = await client.PostAsJsonAsync("/api/books", new { title = "日期測試", publicationDate = "2000-02-29", purchaseDate = "2026-01-01" });
         var book = await response.Content.ReadFromJsonAsync<JsonElement>();
         var id = book.GetProperty("id").GetInt32();
@@ -191,6 +254,7 @@ public sealed class StorageAndMcpTests : IDisposable
     {
         using var api = Api();
         using var client = api.CreateClient();
+        await TestAuth.SignInAsync(client);
         var responses = await Task.WhenAll(Enumerable.Range(0, 5).Select(_ =>
             Task.Run(() => client.PostAsJsonAsync("/api/books", new { title = "同時新增", isbn = "9781234567890", skipIfExists = true }))));
         Assert.All(responses, response => Assert.True(response.IsSuccessStatusCode));

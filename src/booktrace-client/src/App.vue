@@ -3,6 +3,10 @@ import { RouterLink, RouterView, useRouter } from "vue-router";
 import HeaderNotifications from "./components/HeaderNotifications.vue";
 import HeaderMenu from "./components/HeaderMenu.vue";
 import AppIcon from "./components/AppIcon.vue";
+import AccountMenu from "./components/AccountMenu.vue";
+import ChangePasswordDialog from "./components/ChangePasswordDialog.vue";
+import LoginDialog from "./components/LoginDialog.vue";
+import { auth, canEdit, isChangePasswordOpen } from "./auth";
 import { librarySearch } from "./librarySearch";
 
 const router = useRouter();
@@ -83,10 +87,7 @@ const router = useRouter();
           </form>
           <div class="header-personal">
           <HeaderNotifications />
-          <div class="reader-profile" aria-label="Amber 的私人書房">
-            <span class="reader-avatar" aria-hidden="true"><img src="/images/reading-girl.webp" width="768" height="512" alt="" /></span>
-            <span class="desktop-only">Amber</span>
-          </div>
+          <AccountMenu />
           </div>
         </div>
       </header>
@@ -104,7 +105,7 @@ const router = useRouter();
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 5.5h12a2 2 0 0 1 2 2v11H7a2 2 0 0 1-2-2v-11Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /><path d="M7 18.5h12M8.5 9h7M8.5 12h7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
           <span>歷史</span>
         </RouterLink>
-        <RouterLink class="bottom-nav-link bottom-nav-add" to="/books/new" aria-label="新增書籍">
+        <RouterLink v-if="canEdit" class="bottom-nav-link bottom-nav-add" to="/books/new" aria-label="新增書籍">
           <span class="bottom-nav-add-icon" aria-hidden="true">＋</span>
           <span>新增</span>
         </RouterLink>
@@ -119,4 +120,7 @@ const router = useRouter();
       </nav>
     </div>
   </div>
+
+  <LoginDialog v-if="auth.loginOpen" />
+  <ChangePasswordDialog v-if="isChangePasswordOpen" />
 </template>
