@@ -434,9 +434,6 @@ class CliResearchRunner:
         self._lock = threading.Lock()
         self.cancel_event = threading.Event()
 
-    def reset(self) -> None:
-        self.cancel_event.clear()
-
     def cancel(self) -> None:
         self.cancel_event.set()
         with self._lock:
@@ -454,7 +451,7 @@ class CliResearchRunner:
         callback: EventCallback,
         effort: str | None = None,
     ) -> RunResult:
-        self.reset()
+        # One runner per book: a stop that arrives before the process starts must still count.
         attempt = 0
         while True:
             attempt += 1

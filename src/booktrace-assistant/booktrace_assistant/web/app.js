@@ -37,7 +37,7 @@ const itemsUI = {};
 let pendingSave = null;
 let batchRows = [];
 let stopped = false;
-let progress = null;
+const progresses = {};
 
 const STEP_ICONS = { note: "💬", think: "🧠", search: "🔍", fetch: "🌐", booktrace: "📚", image: "🖼️", error: "⚠️" };
 
@@ -67,18 +67,28 @@ function scrollToBottom() {
   requestAnimationFrame(() => chat.scrollTo({ top: chat.scrollHeight, behavior: "smooth" }));
 }
 
+function isResearching() {
+  return busy && busyMode === "research";
+}
+
+function runningProgresses() {
+  return Object.values(progresses).filter((entry) => entry.running);
+}
+
 function setBusy(value, mode = "", label = "") {
   const changed = busy !== value || busyMode !== mode;
   busy = value;
   busyMode = mode;
-  sendButton.disabled = value;
-  attachButton.disabled = value;
-  input.disabled = value;
+  // Only research locks the box; books being saved must not stop you from searching on.
+  const researching = isResearching();
+  sendButton.disabled = researching;
+  attachButton.disabled = researching;
+  input.disabled = researching;
   if (value) {
     statusBar.classList.remove("hidden");
     statusText.textContent = label || "正在處理…";
     cancelButton.classList.toggle("hidden", mode === "save");
-    showProgressButton.classList.toggle("hidden", !(progress && progress.running));
+    showProgressButton.classList.toggle("hidden", !runningProgresses().length);
   } else {
     statusBar.classList.add("hidden");
     statusElapsed.textContent = "";
@@ -133,7 +143,7 @@ function fact(label, value) {
 }
 
 function itemUI(itemId) {
-  return (itemsUI[itemId] ||= { label: "", title: "", card: null, saveButton: null, saved: false });
+  return (itemsUI[itemId] ||= { label: "", title: "", card: null, saveButton: null, saved: false, saving: false });
 }
 
 function itemName(itemId) {
@@ -219,8 +229,11 @@ function renderOutcome(outcome, attempts, itemId) {
         pick.textContent = "就是這本";
         pick.addEventListener("click", async () => {
           const text = `請以這個版本為準：${[candidate.title, candidate.isbn && `ISBN ${candidate.isbn}`, candidate.publication_year && `${candidate.publication_year} 年版`].filter(Boolean).join("，")}`;
-          try { await api("/api/message", { method: "POST", body: JSON.stringify({ text, contextItemId: itemId }) }); }
-          catch (error) { showToast(error.message); }
+          try {
+            await api("/api/message", { method: "POST", body: JSON.stringify({ text, contextItemId: itemId }) });
+            pick.disabled = true;
+            pick.textContent = "已選這本";
+          } catch (error) { showToast(error.message); }
         });
         li.appendChild(pick);
       }
@@ -356,7 +369,17 @@ function addSaved(event) {
     ui.saveButton.disabled = true;
     ui.saveButton.textContent = "已加入";
     ui.saved = true;
+    ui.saving = false;
   }
+}
+
+// A save that did not go through (or was refused) puts the card's button back so it can be tried again.
+function restoreSaveButton(itemId) {
+  const ui = itemsUI[itemId];
+  if (!ui?.saveButton || ui.saved || !ui.saving) return;
+  ui.saving = false;
+  ui.saveButton.disabled = false;
+  ui.saveButton.textContent = "加入 BookTrace";
 }
 
 function addBatchSummary(event) {
@@ -364,7 +387,7 @@ function addBatchSummary(event) {
   const box = document.createElement("div");
   box.className = "batch-summary";
   const text = document.createElement("div");
-  const unsaved = (event.itemIds || []).filter((id) => itemsUI[id]?.saveButton && !itemsUI[id].saved).length;
+  const unsaved = (event.itemIds || []).filter((id) => itemsUI[id]?.saveButton && !itemsUI[id].saved && !itemsUI[id].saving).length;
   text.textContent = `已查完 ${event.total} 本，其中 ${event.ready} 本版本與封面都核對好了。` +
     (event.ready < event.total ? "其他的請看各自卡片上的說明。" : "");
   box.appendChild(text);
@@ -390,13 +413,15 @@ function formatDuration(totalSeconds) {
   return minutes ? `${minutes} 分 ${seconds % 60} 秒` : `${seconds} 秒`;
 }
 
-function updateProgressSummary() {
-  if (!progress) return;
+function updateProgressSummary(progress) {
   const steps = `${progress.count} 步`;
+  // With several books researched at once, each log says whose it is.
+  const whose = Object.keys(itemsUI).length > 1 ? itemName(progress.itemId) : "";
+  const title = whose ? `《${whose}》查證過程` : "查證過程";
   if (progress.running) {
-    progress.summary.textContent = `查證過程 · 進行中（${steps}）`;
+    progress.summary.textContent = `${title} · 進行中（${steps}）`;
   } else {
-    progress.summary.textContent = ["查證過程", steps, progress.finishedText].filter(Boolean).join(" · ");
+    progress.summary.textContent = [title, steps, progress.finishedText].filter(Boolean).join(" · ");
   }
 }
 
@@ -412,17 +437,19 @@ function startProgress(event) {
   list.className = "progress-steps";
   details.append(summary, meta, list);
   content.appendChild(details);
-  progress = { details, summary, list, count: 0, running: true, startedAt: event.at || Date.now() / 1000, finishedText: "" };
+  const progress = { itemId: event.itemId, details, summary, list, count: 0, running: true, startedAt: event.at || Date.now() / 1000, finishedText: "" };
+  progresses[event.itemId] = progress;
   const waiting = document.createElement("li");
   waiting.className = "progress-step step-waiting";
   waiting.textContent = "已送出，等待 AI 開始（閱讀技能說明、思考中）…";
   list.appendChild(waiting);
   progress.waiting = waiting;
-  updateProgressSummary();
+  updateProgressSummary(progress);
   showProgressButton.classList.remove("hidden");
 }
 
 function addStep(event) {
+  const progress = progresses[event.itemId];
   if (!progress) return;
   if (progress.waiting) {
     progress.waiting.remove();
@@ -452,7 +479,7 @@ function addStep(event) {
   item.append(icon, body);
   progress.list.appendChild(item);
   progress.count += 1;
-  updateProgressSummary();
+  updateProgressSummary(progress);
   if (progress.details.open) {
     const nearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 160;
     if (nearBottom) scrollToBottom();
@@ -460,6 +487,7 @@ function addStep(event) {
 }
 
 function finishProgress(event) {
+  const progress = progresses[event.itemId];
   if (!progress) return;
   progress.running = false;
   if (progress.waiting) {
@@ -471,8 +499,8 @@ function finishProgress(event) {
   if ((event.attempts || 1) > 1) parts.push(`重試 ${event.attempts - 1} 次`);
   if (!event.ok) parts.push("未完成");
   progress.finishedText = parts.join(" · ");
-  updateProgressSummary();
-  showProgressButton.classList.add("hidden");
+  updateProgressSummary(progress);
+  if (!runningProgresses().length) showProgressButton.classList.add("hidden");
 }
 
 function processEvent(event) {
@@ -488,7 +516,7 @@ function processEvent(event) {
       finishProgress(event);
       break;
     case "reset":
-      progress = null;
+      Object.keys(progresses).forEach((id) => delete progresses[id]);
       messages.textContent = "";
       welcome.classList.remove("hidden");
       Object.keys(itemsUI).forEach((id) => delete itemsUI[id]);
@@ -510,6 +538,7 @@ function processEvent(event) {
       break;
     case "assistant_error":
       addError(event.message || "處理未完成。請再試一次。", event.itemId);
+      restoreSaveButton(event.itemId);
       break;
     case "cover_ready":
       setCover(event.url, event.itemId);
@@ -554,8 +583,10 @@ async function pollEvents() {
 }
 
 function updateCountdown() {
-  if (busy && progress && progress.running) {
-    statusElapsed.textContent = `已進行 ${formatDuration(Date.now() / 1000 - progress.startedAt)}`;
+  const running = runningProgresses();
+  if (busy && running.length) {
+    const startedAt = Math.min(...running.map((entry) => entry.startedAt));
+    statusElapsed.textContent = `已進行 ${formatDuration(Date.now() / 1000 - startedAt)}`;
   }
   if (!retryDeadline || !busy) return;
   const remaining = Math.max(0, Math.floor(retryDeadline - Date.now() / 1000));
@@ -625,7 +656,7 @@ async function fileToBase64(file) {
 
 async function sendMessage() {
   const text = input.value.trim();
-  if (busy || (!text && !pendingFiles.length)) return;
+  if (isResearching() || (!text && !pendingFiles.length)) return;
   sendButton.disabled = true;
   statusBar.classList.remove("hidden");
   statusText.textContent = "正在送出…";
@@ -686,6 +717,7 @@ document.querySelectorAll("[data-prompt]").forEach((button) => button.addEventLi
 }));
 
 showProgressButton.addEventListener("click", () => {
+  const progress = runningProgresses()[0];
   if (!progress) return;
   progress.details.open = true;
   progress.details.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -779,8 +811,30 @@ document.querySelector("#confirm-save").addEventListener("click", async (event) 
   confirmDialog.close();
   const target = pendingSave || {};
   pendingSave = null;
-  try { await api("/api/save", { method: "POST", body: JSON.stringify({ confirmed: true, itemId: target.itemId || "", all: !!target.all }) }); }
-  catch (error) { showToast(error.message); }
+  const ui = target.itemId ? itemsUI[target.itemId] : null;
+  if (ui?.saveButton) {
+    // Saving runs beside the research that may still be going on, so show it started right away.
+    ui.saving = true;
+    ui.saveButton.disabled = true;
+    ui.saveButton.textContent = "加入中…";
+  }
+  try {
+    await api("/api/save", { method: "POST", body: JSON.stringify({ confirmed: true, itemId: target.itemId || "", all: !!target.all }) });
+    if (target.all) {
+      // Every card whose cover is confirmed (button enabled) is now queued to be saved.
+      Object.values(itemsUI).forEach((entry) => {
+        if (entry.saveButton && !entry.saved && !entry.saving && !entry.saveButton.disabled) {
+          entry.saving = true;
+          entry.saveButton.disabled = true;
+          entry.saveButton.textContent = "加入中…";
+        }
+      });
+      showToast("已開始加入，過程中可以繼續查書", 2600);
+    }
+  } catch (error) {
+    showToast(error.message);
+    if (target.itemId) restoreSaveButton(target.itemId);
+  }
 });
 
 document.querySelector("#shutdown-app").addEventListener("click", async () => {
@@ -891,7 +945,7 @@ function renderBatchRows() {
 }
 
 document.querySelector("#batch-button").addEventListener("click", () => {
-  if (busy) { showToast("請等目前的處理完成"); return; }
+  if (isResearching()) { showToast("請等目前的查證完成，或先按「停止」"); return; }
   if (!batchRows.length) batchRows = [newBatchRow(), newBatchRow()];
   renderBatchRows();
   batchDialog.showModal();

@@ -13,6 +13,7 @@ import uuid
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
+from functools import partial
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -43,6 +44,9 @@ from .saver import BookSaver, SaveResult
 WEB_ROOT = Path(__file__).with_name("web")
 MAX_REQUEST_BYTES = 80 * 1024 * 1024
 MAX_BATCH_BOOKS = 10
+# Each book is its own CLI run and all books sent together run at once. The ceiling leaves room for
+# a full batch plus an answer about each of its books, so nothing the user sends has to wait.
+MAX_PARALLEL_RESEARCH = MAX_BATCH_BOOKS * 2
 MAX_CANDIDATE_COVERS = 6
 MODEL_OPTIONS = {
     "codex": [
@@ -130,7 +134,18 @@ class BookItem:
     outcome: ResearchOutcome | None = None
     cover_path: Path | None = None
     saved: bool = False
+    saving: bool = False
     previous_context: str = ""
+
+
+@dataclass
+class ResearchJob:
+    """One book waiting for (or holding) a research slot. `batch` is the shared tally of its "查多本" run."""
+
+    item: BookItem
+    request: ResearchRequest
+    batch: dict[str, Any] | None = None
+    first: bool = False
 
 
 def _safe_text(value: Any, limit: int = 10000) -> str:
@@ -145,18 +160,35 @@ class ChatState:
         self.engine, self.models, self.auto_retry, self.effort = load_preferences(_read_settings(), self.engines)
         self.events: list[dict[str, Any]] = []
         self.next_event_id = 1
-        self.busy = False
-        self.busy_mode = ""
+        # Research and saving are separate lanes: a lane is "active" (status text) while it has work,
+        # so confirming a book never has to wait for the other books still being researched.
+        self.active: dict[str, str] = {}
         self.status = "準備就緒"
-        self.runner = CliResearchRunner()
+        self.runner_factory = CliResearchRunner
+        self.max_parallel = MAX_PARALLEL_RESEARCH
         self.saver = BookSaver()
         self.workspace = create_workspace()
         self.items: dict[str, BookItem] = {}
         self.last_item_id = ""
-        self.current_item_id = ""
         self.media: dict[str, Path] = {}
         self.generation = 0
         self.last_activity = time.time()
+        self.research_queue: list[ResearchJob] = []
+        self.research_workers = 0
+        self.research_done = 0
+        self.runners: dict[str, Any] = {}
+        self.cancel_requested = False
+        self.last_idle = "準備就緒"
+        self.batch: dict[str, Any] | None = None
+        self.save_queue: list[BookItem] = []
+
+    @property
+    def busy(self) -> bool:
+        return bool(self.active)
+
+    @property
+    def busy_mode(self) -> str:
+        return "research" if "research" in self.active else "save" if "save" in self.active else ""
 
     def touch(self) -> None:
         self.last_activity = time.time()
@@ -182,7 +214,7 @@ class ChatState:
                 "busy": self.busy,
                 "busyMode": self.busy_mode,
                 "status": self.status,
-                "canSave": not self.busy and any(self._item_can_save(item) for item in self.items.values()),
+                "canSave": any(self._item_can_save(item) for item in self.items.values()),
                 "settings": self.settings_payload(),
                 "lastEventId": self.next_event_id - 1,
                 "booktraceSite": BOOKTRACE_SITE,
@@ -228,33 +260,53 @@ class ChatState:
             )
             self.emit("settings", settings=self.settings_payload())
 
-    def _set_busy(self, mode: str, status: str) -> None:
-        with self.lock:
-            self.busy = True
-            self.busy_mode = mode
-            self.status = status
-            self.emit("busy", busy=True, mode=mode, status=status)
+    def _compose_status(self, idle_status: str = "準備就緒") -> str:
+        research, saving = self.active.get("research"), self.active.get("save")
+        if research is not None:
+            return research + ("（同時加入書架中）" if saving is not None else "")
+        return saving if saving is not None else idle_status
 
-    def _set_idle(self, status: str = "準備就緒") -> None:
+    def _lane_text(self, lane: str, text: str) -> None:
+        """Change a running lane's status line; shown through the polled status only."""
         with self.lock:
-            self.busy = False
-            self.busy_mode = ""
-            self.status = status
-            self.emit("busy", busy=False, mode="", status=status)
+            if lane in self.active:
+                self.active[lane] = text
+                self.status = self._compose_status()
 
-    def _runner_event(self, kind: str, text: str, deadline: float | None) -> None:
+    def _start_lane(self, lane: str, status: str) -> None:
+        with self.lock:
+            self.active[lane] = status
+            self.status = self._compose_status()
+            self.emit("busy", busy=True, mode=self.busy_mode, status=self.status)
+
+    def _end_lane(self, lane: str, idle_status: str) -> None:
+        with self.lock:
+            self.active.pop(lane, None)
+            self.status = self._compose_status(idle_status)
+            self.emit("busy", busy=self.busy, mode=self.busy_mode, status=self.status)
+
+    def _runner_event(self, item_id: str, kind: str, text: str, deadline: float | None) -> None:
         if kind == "retry":
             self.emit("retry", message=text, deadline=deadline)
         elif kind.startswith("step:"):
-            self.emit("step", itemId=self.current_item_id, kind=kind.removeprefix("step:"), text=text)
-        elif kind == "thinking":
-            # Frequent token-count updates: shown through the polled status only.
-            with self.lock:
-                self.status = text
+            self.emit("step", itemId=item_id, kind=kind.removeprefix("step:"), text=text)
         else:
+            # Only one book running: its live status is the lane's status. With several, the lane
+            # shows overall progress instead, so their messages must not fight over one status line.
             with self.lock:
-                self.status = text
-            self.emit("status", message=text, kind=kind)
+                alone = len(self.runners) <= 1 and not self.research_queue
+            if not alone:
+                return
+            self._lane_text("research", text)
+            if kind != "thinking":
+                # "thinking" is a frequent token-count update: shown through the polled status only.
+                self.emit("status", message=text, kind=kind)
+
+    def _save_event(self, kind: str, text: str, deadline: float | None) -> None:
+        if kind == "retry":
+            self.emit("retry", message=text, deadline=deadline)
+        else:
+            self._lane_text("save", text)
 
     def _save_uploaded_images(self, images: Any) -> tuple[tuple[Path, ...], list[str]]:
         if not isinstance(images, list):
@@ -292,8 +344,11 @@ class ChatState:
         return tuple(paths), urls
 
     def send_message(self, payload: dict[str, Any]) -> None:
+        # While books are being researched only an answer about one of them (a picked candidate,
+        # extra clues) may start; it joins the line instead of waiting for the whole run to end.
+        context_id = _safe_text(payload.get("contextItemId"), 40)
         with self.lock:
-            if self.busy:
+            if "research" in self.active and context_id not in self.items:
                 raise UserInputError("上一則訊息仍在處理中，可以先按停止。")
             if not self.engines:
                 raise UserInputError("找不到 Codex 或 Claude CLI，請先安裝並登入。")
@@ -306,7 +361,7 @@ class ChatState:
             cover_index = -1
         with self.lock:
             # A follow-up answers one earlier item (the clicked card, else the latest one).
-            earlier = self.items.get(_safe_text(payload.get("contextItemId"), 40)) or self.items.get(self.last_item_id)
+            earlier = self.items.get(context_id) or self.items.get(self.last_item_id)
             if earlier and not images:
                 images, cover_index = earlier.images, earlier.cover_index
                 image_urls = [self._media_url(path) for path in images]
@@ -318,24 +373,23 @@ class ChatState:
         )
         validate_research_request(request)
         with self.lock:
-            self.generation += 1
-            generation = self.generation
+            if "research" in self.active and context_id not in self.items:
+                raise UserInputError("上一則訊息仍在處理中，可以先按停止。")
             item = self._new_item(text, images, cover_index)
-            self.last_item_id = item.id
-            self._set_busy("research", "正在辨識並查證這本書…")
-
-        def work() -> None:
+            if self.batch is None:
+                self.last_item_id = item.id
             self.emit("user", itemId=item.id, text=text, images=image_urls, coverIndex=cover_index)
-            idle, _ = self._research_item(generation, item, request)
-            if idle is not None:
-                self._set_idle(idle)
-
-        threading.Thread(target=work, daemon=True).start()
+            # An answer given during a "查多本" run counts toward that run's summary.
+            job = ResearchJob(item, request, self.batch)
+            if self.batch is not None:
+                self.batch["ids"].append(item.id)
+                self.batch["pending"] += 1
+            self._enqueue_research([job], first="research" in self.active)
 
     def send_batch(self, payload: dict[str, Any]) -> None:
-        """Research several books one after another; each row is one book (text and/or one photo)."""
+        """Research several books at the same time (a few at once); each row is one book (text and/or one photo)."""
         with self.lock:
-            if self.busy:
+            if "research" in self.active:
                 raise UserInputError("上一則訊息仍在處理中，可以先按停止。")
             if not self.engines:
                 raise UserInputError("找不到 Codex 或 Claude CLI，請先安裝並登入。")
@@ -357,60 +411,127 @@ class ChatState:
             validate_research_request(request)
             prepared.append((text, urls, cover_index, request))
         with self.lock:
-            self.generation += 1
-            generation = self.generation
+            if "research" in self.active:
+                raise UserInputError("上一則訊息仍在處理中，可以先按停止。")
             self.last_item_id = ""
             items = [
                 self._new_item(text, request.image_paths, cover_index)
                 for text, _, cover_index, request in prepared
             ]
-            self._set_busy("research", f"正在查證第 1 / {len(items)} 本…")
-
-        def work() -> None:
-            total = len(items)
-            stopped = False
+            batch = {"total": len(items), "ids": [item.id for item in items], "pending": len(items)}
+            self.batch = batch
+            jobs = []
             for index, (item, (text, urls, cover_index, request)) in enumerate(zip(items, prepared), start=1):
-                with self.lock:
-                    if generation != self.generation:
-                        return
-                    self.status = f"正在查證第 {index} / {total} 本…"
                 self.emit(
-                    "user", itemId=item.id, text=text, images=urls, coverIndex=cover_index, index=index, total=total
+                    "user", itemId=item.id, text=text, images=urls, coverIndex=cover_index, index=index, total=len(items)
                 )
-                idle, cancelled = self._research_item(generation, item, request)
-                if idle is None:
-                    return
-                if cancelled:
-                    stopped = True
-                    break
-            ready = sum(1 for item in items if self._item_can_save(item))
-            self.emit("batch_finished", total=total, ready=ready, itemIds=[item.id for item in items])
-            self._set_idle("已停止" if stopped else f"已查完，{ready} 本可以加入書架")
-
-        threading.Thread(target=work, daemon=True).start()
+                jobs.append(ResearchJob(item, request, batch))
+            self._enqueue_research(jobs)
 
     def _new_item(self, text: str, images: tuple[Path, ...], cover_index: int) -> BookItem:
         item = BookItem(id=uuid.uuid4().hex[:12], text=text, images=images, cover_index=cover_index)
         self.items[item.id] = item
-        self.current_item_id = item.id
         return item
 
     @staticmethod
-    def _item_can_save(item: BookItem) -> bool:
-        return bool(item.outcome and item.outcome.ready and item.cover_path and not item.saved)
+    def _item_ready(item: BookItem) -> bool:
+        return bool(item.outcome and item.outcome.ready and item.cover_path)
+
+    @classmethod
+    def _item_can_save(cls, item: BookItem) -> bool:
+        return cls._item_ready(item) and not item.saved and not item.saving
 
     def _media_url(self, path: Path) -> str:
         return f"/media/{self._media_id_for(path)}?token={urllib.parse.quote(self.token)}"
 
-    def _research_item(self, generation: int, item: BookItem, request: ResearchRequest) -> tuple[str | None, bool]:
-        """Run one book through the read-only research. Returns (idle label, cancelled); label None = stale."""
+    def _enqueue_research(self, jobs: list[ResearchJob], first: bool = False) -> None:
+        """Queue books for research and start workers up to the parallel limit. Call with the lock held.
+
+        `first` puts them ahead of books that have not started (an answer about a book already shown),
+        but behind earlier answers, so several answers run in the order they were given.
+        """
+        if first:
+            position = 0
+            while position < len(self.research_queue) and self.research_queue[position].first:
+                position += 1
+            for job in jobs:
+                job.first = True
+            self.research_queue[position:position] = jobs
+        else:
+            self.research_queue.extend(jobs)
+        if "research" not in self.active:
+            self.cancel_requested = False
+            self.research_done = 0
+            self._start_lane("research", self._research_status())
+        for _ in range(min(self.max_parallel - self.research_workers, len(self.research_queue))):
+            self.research_workers += 1
+            threading.Thread(target=self._research_worker, args=(self.generation,), daemon=True).start()
+        self._lane_text("research", self._research_status())
+
+    def _research_status(self) -> str:
+        if self.cancel_requested:
+            return "正在停止…"
+        running, waiting = len(self.runners), len(self.research_queue)
+        total = self.research_done + running + waiting
+        if total <= 1:
+            return "正在辨識並查證這本書…"
+        return f"已查完 {self.research_done} / {total} 本，正在同時查 {running} 本" + (
+            f"，還有 {waiting} 本排隊" if waiting else ""
+        )
+
+    def _research_worker(self, generation: int) -> None:
+        while True:
+            with self.lock:
+                if generation != self.generation or not self.research_queue:
+                    self.research_workers -= 1
+                    if self.research_workers == 0:
+                        label = "已停止" if self.cancel_requested else self.last_idle
+                        self.cancel_requested = False
+                        self.batch = None
+                        self._end_lane("research", label)
+                    return
+                job = self.research_queue.pop(0)
+                runner = self.runner_factory()
+                self.runners[job.item.id] = runner
+                self._lane_text("research", self._research_status())
+            try:
+                idle = self._research_item(generation, job.item, job.request, runner)
+            except Exception as error:  # an unexpected failure must not leave the lane stuck busy
+                self.emit("assistant_error", itemId=job.item.id, message=f"查證時發生未預期的錯誤：{error}")
+                idle = "查證未完成"
+            with self.lock:
+                self.runners.pop(job.item.id, None)
+                self.research_done += 1
+                if idle is not None:
+                    self.last_idle = idle
+                self._release_batch(job)
+                self._lane_text("research", self._research_status())
+
+    def _release_batch(self, job: ResearchJob) -> None:
+        """One book of a "查多本" run is over; the run's summary goes out after the last one. Lock held."""
+        batch = job.batch
+        if batch is None:
+            return
+        batch["pending"] -= 1
+        if batch["pending"] > 0:
+            return
+        ready = sum(1 for item_id in batch["ids"] if self._item_ready(self.items[item_id]))
+        saveable = sum(1 for item_id in batch["ids"] if self._item_can_save(self.items[item_id]))
+        self.emit("batch_finished", total=batch["total"], ready=ready, itemIds=batch["ids"])
+        self.last_idle = f"已查完，{saveable} 本可以加入書架"
+        if self.batch is batch:
+            self.batch = None
+
+    def _research_item(
+        self, generation: int, item: BookItem, request: ResearchRequest, runner: Any
+    ) -> str | None:
+        """Run one book through the read-only research. Returns the idle label (None = stale)."""
         with self.lock:
             engine = self.engine
             model = self.models.get(engine) or None
             effort = self.effort or None
             executable = self.engines[engine]
             auto_retry = self.auto_retry
-            self.current_item_id = item.id
         self.emit(
             "run_started",
             itemId=item.id,
@@ -420,13 +541,13 @@ class ChatState:
             at=time.time(),
         )
         started = time.time()
-        result = self.runner.run(
+        result = runner.run(
             engine=engine,
             executable=executable,
             model=model,
             request=request,
             auto_retry=auto_retry,
-            callback=self._runner_event,
+            callback=partial(self._runner_event, item.id),
             effort=effort,
         )
         self.emit(
@@ -437,7 +558,7 @@ class ChatState:
             usage=result.usage,
             attempts=result.attempts,
         )
-        return self._finish_research(generation, item, result), result.cancelled
+        return self._finish_research(generation, item, result)
 
     def _finish_research(self, generation: int, item: BookItem, result: RunResult) -> str | None:
         """Record the result on the item and emit its card; returns the idle label (None = stale)."""
@@ -581,54 +702,66 @@ class ChatState:
         return value[-5000:]
 
     def save_book(self, item_id: str = "", save_all: bool = False) -> None:
+        """Queue confirmed books for saving. Saving runs beside research: it never waits for other books."""
         with self.lock:
-            if self.busy:
-                raise UserInputError("目前仍在處理訊息。")
             if save_all:
                 targets = [item for item in self.items.values() if self._item_can_save(item)]
                 if not targets:
                     raise UserInputError("目前沒有可以加入的書。")
             else:
                 item = self.items.get(item_id or self.last_item_id)
-                if not item or not item.outcome or not item.outcome.ready or not item.cover_path:
+                if not item or not self._item_ready(item):
                     raise UserInputError("這本書尚未完成版本與封面確認。")
                 if item.saved:
                     raise UserInputError("這本書已經保存完成。")
+                if item.saving:
+                    raise UserInputError("這本書正在加入 BookTrace，請稍候。")
                 targets = [item]
-            generation = self.generation
-            auto_retry = self.auto_retry
-            self._set_busy("save", "正在加入書架、上傳封面並讀回確認…")
+            for item in targets:
+                item.saving = True
+            self.save_queue.extend(targets)
+            if "save" not in self.active:
+                self._start_lane("save", "正在加入書架、上傳封面並讀回確認…")
+                threading.Thread(target=self._save_worker, args=(self.generation,), daemon=True).start()
 
-        def work() -> None:
-            failures = 0
-            for index, item in enumerate(targets, start=1):
-                with self.lock:
-                    if generation != self.generation:
-                        return
-                    self.current_item_id = item.id
-                    if len(targets) > 1:
-                        self.status = f"正在加入第 {index} / {len(targets)} 本…"
+    def _save_worker(self, generation: int) -> None:
+        """Save queued books one at a time (they share one metadata file), however long research takes."""
+        done = failures = 0
+        while True:
+            with self.lock:
+                if generation != self.generation or not self.save_queue:
+                    self.save_queue.clear()
+                    if done + failures > 1:
+                        label = f"已加入 {done} 本" + (f"，{failures} 本未完成" if failures else "")
+                    else:
+                        label = "保存未完成，可以再試一次" if failures else "已加入 BookTrace"
+                    self._end_lane("save", label)
+                    return
+                item = self.save_queue.pop(0)
+                auto_retry = self.auto_retry
+                workspace = self.workspace
+                if done + failures or self.save_queue:
+                    number = done + failures + 1
+                    self._lane_text("save", f"正在加入第 {number} / {number + len(self.save_queue)} 本…")
+            try:
                 result = self.saver.save(
                     book=item.outcome.book,
                     personal=item.outcome.personal,
                     cover_path=item.cover_path,
-                    workspace=self.workspace,
+                    workspace=workspace,
                     correct=item.outcome.correct_existing,
                     replace_cover=item.outcome.replace_cover,
                     auto_retry=auto_retry,
-                    callback=self._runner_event,
+                    callback=self._save_event,
                 )
-                if not self._finish_save(generation, item, result):
-                    failures += 1
-            if len(targets) > 1:
-                done = len(targets) - failures
-                self._set_idle(f"已加入 {done} 本" + (f"，{failures} 本未完成" if failures else ""))
-            elif failures:
-                self._set_idle("保存未完成，可以再試一次")
+            except (UserInputError, OSError) as error:
+                result = SaveResult(False, error=str(error))
+            if self._finish_save(generation, item, result):
+                done += 1
             else:
-                self._set_idle("已加入 BookTrace")
-
-        threading.Thread(target=work, daemon=True).start()
+                failures += 1
+            with self.lock:
+                item.saving = False
 
     def _finish_save(self, generation: int, item: BookItem, result: SaveResult) -> bool:
         with self.lock:
@@ -653,13 +786,21 @@ class ChatState:
         return True
 
     def cancel(self) -> None:
+        """Stop all research (running books and the ones still waiting); saving cannot be interrupted."""
         with self.lock:
-            if not self.busy:
+            if "research" not in self.active:
+                if "save" in self.active:
+                    raise UserInputError("正在寫入並驗證 BookTrace，這個步驟不能中途停止。")
                 return
-            if self.busy_mode == "save":
-                raise UserInputError("正在寫入並驗證 BookTrace，這個步驟不能中途停止。")
-            self.status = "正在停止…"
-        self.runner.cancel()
+            self.cancel_requested = True
+            waiting, self.research_queue = self.research_queue, []
+            for job in waiting:
+                self.emit("assistant_error", itemId=job.item.id, message="已停止，這本沒有查。")
+                self._release_batch(job)
+            runners = list(self.runners.values())
+            self._lane_text("research", "正在停止…")
+        for runner in runners:
+            runner.cancel()
 
     def new_chat(self) -> None:
         with self.lock:
@@ -670,7 +811,6 @@ class ChatState:
             self.media = {}
             self.items = {}
             self.last_item_id = ""
-            self.current_item_id = ""
             self.generation += 1
             self.emit("reset")
         cleanup_workspace(old_workspace)
