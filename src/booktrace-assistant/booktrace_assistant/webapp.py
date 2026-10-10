@@ -4,13 +4,11 @@ import base64
 import json
 import mimetypes
 import os
-import secrets
+import socket
 import threading
 import time
 import urllib.parse
-import urllib.request
 import uuid
-import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from functools import partial
@@ -26,7 +24,6 @@ from .core import (
     MAX_ATTACHMENTS,
     MAX_IMAGE_BYTES,
     SETTINGS_PATH,
-    WORK_ROOT,
     ResearchOutcome,
     ResearchRequest,
     UserInputError,
@@ -74,9 +71,9 @@ EFFORT_OPTIONS = [
     {"value": "xhigh", "label": "很高 · 更仔細、較慢"},
     {"value": "max", "label": "最高 · 最慢、最貴"},
 ]
-# Closing the browser tab stops the polling; exit once nobody has polled for this long.
-IDLE_SHUTDOWN_SECONDS = 5 * 60
-SERVER_INFO_PATH = WORK_ROOT / "server.json"
+# 固定連接埠，網址才能分享給別人；被占用時可用環境變數 BOOKTRACE_PORT 換一個。
+DEFAULT_PORT = 8765
+PORT_ENV = "BOOKTRACE_PORT"
 
 
 def effort_label(effort: str) -> str:
@@ -156,7 +153,6 @@ def _safe_text(value: Any, limit: int = 10000) -> str:
 class ChatState:
     def __init__(self) -> None:
         self.lock = threading.RLock()
-        self.token = secrets.token_urlsafe(32)
         self.engines = detect_engines()
         saved_settings = _read_settings()
         self.engine, self.models, self.auto_retry, self.effort = load_preferences(saved_settings, self.engines)
@@ -181,7 +177,6 @@ class ChatState:
         self.last_item_id = ""
         self.media: dict[str, Path] = {}
         self.generation = 0
-        self.last_activity = time.time()
         self.research_queue: list[ResearchJob] = []
         self.research_workers = 0
         self.research_done = 0
@@ -202,9 +197,6 @@ class ChatState:
     @property
     def busy_mode(self) -> str:
         return "research" if "research" in self.active else "save" if "save" in self.active else ""
-
-    def touch(self) -> None:
-        self.last_activity = time.time()
 
     def settings_payload(self) -> dict[str, Any]:
         return {
@@ -384,7 +376,7 @@ class ChatState:
             media_id = uuid.uuid4().hex
             self.media[media_id] = path
             paths.append(path)
-            urls.append(f"/media/{media_id}?token={urllib.parse.quote(self.token)}")
+            urls.append(f"/media/{media_id}")
         return tuple(paths), urls
 
     def send_message(self, payload: dict[str, Any]) -> None:
@@ -486,7 +478,7 @@ class ChatState:
         return cls._item_ready(item) and not item.saved and not item.saving
 
     def _media_url(self, path: Path) -> str:
-        return f"/media/{self._media_id_for(path)}?token={urllib.parse.quote(self.token)}"
+        return f"/media/{self._media_id_for(path)}"
 
     def _enqueue_research(self, jobs: list[ResearchJob], first: bool = False) -> None:
         """Queue books for research and start workers up to the parallel limit. Call with the lock held.
@@ -850,6 +842,14 @@ class ChatState:
         for runner in runners:
             runner.cancel()
 
+    def cancel_all(self) -> None:
+        """Stop every running research on the way out, so no CLI process is left behind."""
+        with self.lock:
+            self.research_queue = []
+            runners = list(self.runners.values())
+        for runner in runners:
+            runner.cancel()
+
     def new_chat(self) -> None:
         with self.lock:
             if self.busy:
@@ -909,11 +909,6 @@ class BookTraceHandler(BaseHTTPRequestHandler):
         self._headers("application/json; charset=utf-8", len(raw), status)
         self.wfile.write(raw)
 
-    def _authorized(self, query: dict[str, list[str]]) -> bool:
-        header = self.headers.get("X-BookTrace-Token", "")
-        supplied = header or (query.get("token", [""])[0])
-        return secrets.compare_digest(supplied, self.server.state.token)
-
     def _read_json(self) -> dict[str, Any]:
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -932,13 +927,8 @@ class BookTraceHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         query = urllib.parse.parse_qs(parsed.query)
-        self.server.state.touch()
         if parsed.path == "/":
-            if not self._authorized(query):
-                self.send_error(HTTPStatus.FORBIDDEN)
-                return
-            template = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
-            body = template.replace("__BOOKTRACE_TOKEN__", json.dumps(self.server.state.token)).encode("utf-8")
+            body = (WEB_ROOT / "index.html").read_bytes()
             self._headers("text/html; charset=utf-8", len(body))
             self.wfile.write(body)
             return
@@ -949,9 +939,6 @@ class BookTraceHandler(BaseHTTPRequestHandler):
             content_type = "text/css; charset=utf-8" if filename.endswith(".css") else "text/javascript; charset=utf-8"
             self._headers(content_type, len(body))
             self.wfile.write(body)
-            return
-        if not self._authorized(query):
-            self._json({"error": "未授權"}, 403)
             return
         if parsed.path == "/api/state":
             self._json(self.server.state.snapshot())
@@ -982,11 +969,6 @@ class BookTraceHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
-        query = urllib.parse.parse_qs(parsed.query)
-        self.server.state.touch()
-        if not self._authorized(query):
-            self._json({"error": "未授權"}, 403)
-            return
         try:
             if parsed.path == "/api/message":
                 self.server.state.send_message(self._read_json())
@@ -1023,10 +1005,6 @@ class BookTraceHandler(BaseHTTPRequestHandler):
                 self.server.state.new_chat()
                 self._json({"ok": True})
                 return
-            if parsed.path == "/api/shutdown":
-                self._json({"ok": True})
-                threading.Thread(target=self.server.shutdown, daemon=True).start()
-                return
             self._json({"error": "找不到操作"}, 404)
         except UserInputError as error:
             self._json({"error": str(error)}, 409)
@@ -1034,87 +1012,57 @@ class BookTraceHandler(BaseHTTPRequestHandler):
             self._json({"error": str(error)}, 400)
 
 
-def _running_instance() -> dict[str, Any] | None:
-    """Return the server info of a live instance, or None."""
+def _lan_addresses() -> list[str]:
+    """This computer's LAN IPv4 addresses, so the link can be shared with people on the same network."""
+    found: list[str] = []
     try:
-        info = json.loads(SERVER_INFO_PATH.read_text(encoding="utf-8"))
-        request = urllib.request.Request(
-            f"http://127.0.0.1:{int(info['port'])}/api/state",
-            headers={"X-BookTrace-Token": str(info["token"])},
-        )
-        with urllib.request.urlopen(request, timeout=3) as response:
-            if response.status == 200:
-                return info
-    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
-        pass
-    return None
-
-
-def _app_url(port: int, token: str) -> str:
-    return f"http://127.0.0.1:{port}/?token={urllib.parse.quote(token)}"
-
-
-def stop_running_instance() -> bool:
-    """Ask a running instance to exit. Returns True when one was found."""
-    info = _running_instance()
-    if info is None:
-        return False
-    request = urllib.request.Request(
-        f"http://127.0.0.1:{int(info['port'])}/api/shutdown",
-        data=b"{}",
-        headers={"X-BookTrace-Token": str(info["token"]), "Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=5):
-            pass
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            address = info[4][0]
+            if not address.startswith(("127.", "169.254.")) and address not in found:
+                found.append(address)
     except OSError:
         pass
-    for _ in range(20):
-        if _running_instance() is None:
-            return True
-        time.sleep(0.5)
-    return True
+    return found
+
+
+def _port_from_env() -> int:
+    raw = os.environ.get(PORT_ENV, "").strip()
+    if not raw:
+        return DEFAULT_PORT
+    try:
+        port = int(raw)
+    except ValueError:
+        port = 0
+    if not 1 <= port <= 65535:
+        raise UserInputError(f"環境變數 {PORT_ENV} 必須是 1 到 65535 的數字。")
+    return port
 
 
 def launch_web_app() -> None:
-    existing = _running_instance()
-    if existing is not None:
-        # Double-clicking the launcher again just reopens the running assistant.
-        webbrowser.open(_app_url(int(existing["port"]), str(existing["token"])), new=1)
-        return
+    """Serve in the foreground until this console window is closed (or Ctrl+C)."""
+    port = _port_from_env()
     state = ChatState()
-    server = BookTraceServer(("127.0.0.1", 0), state)
-    port = server.server_address[1]
-    url = _app_url(port, state.token)
-    SERVER_INFO_PATH.write_text(
-        json.dumps({"pid": os.getpid(), "port": port, "token": state.token}), encoding="utf-8"
-    )
-
-    def idle_shutdown() -> None:
-        while True:
-            time.sleep(20)
-            with state.lock:
-                expired = not state.busy and time.time() - state.last_activity > IDLE_SHUTDOWN_SECONDS
-            if expired:
-                server.shutdown()
-                return
-
-    threading.Thread(target=idle_shutdown, daemon=True).start()
-    webbrowser.open(url, new=1)
+    try:
+        server = BookTraceServer(("0.0.0.0", port), state)
+    except OSError as error:
+        raise UserInputError(
+            f"連接埠 {port} 無法使用（可能小幫手已經開著，或被其他程式占用）。"
+            f"請先關掉另一個小幫手視窗，或設定環境變數 {PORT_ENV} 換一個連接埠。"
+        ) from error
+    print("BookTrace 小幫手已啟動，可以把下面的網址分享給別人：")
+    for address in _lan_addresses():
+        print(f"  http://{address}:{port}/")
+    print(f"  http://localhost:{port}/  （只有這台電腦）")
+    print()
+    print("關閉這個視窗就會結束小幫手。")
     try:
         server.serve_forever(poll_interval=0.4)
+    except KeyboardInterrupt:
+        pass
     finally:
         server.server_close()
-        state.runner.cancel()
-        try:
-            info = json.loads(SERVER_INFO_PATH.read_text(encoding="utf-8"))
-            if info.get("pid") == os.getpid():
-                SERVER_INFO_PATH.unlink()
-        except (OSError, ValueError):
-            pass
+        state.cancel_all()
         try:
             cleanup_workspace(state.workspace)
         except (OSError, ValueError):
             pass
-

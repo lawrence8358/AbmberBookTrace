@@ -114,12 +114,9 @@
             <button id="sign-out" type="button" class="secondary hidden">登出</button>
           </div>
         </section>
-        <div class="dialog-actions split-actions">
-          <button id="shutdown-app" class="danger-quiet" type="button">結束小幫手</button>
-          <div>
-            <button value="cancel" class="secondary">取消</button>
-            <button id="save-settings" value="default" class="primary">儲存</button>
-          </div>
+        <div class="dialog-actions">
+          <button value="cancel" class="secondary">取消</button>
+          <button id="save-settings" value="default" class="primary">儲存</button>
         </div>
       </form>
     </dialog>
@@ -160,7 +157,6 @@
 
     <div id="toast" class="toast hidden" role="status"></div>
 
-    <script>window.BOOKTRACE_TOKEN = __BOOKTRACE_TOKEN__;</script>
     <script src="/app.js"></script>
   </body>
 </html>

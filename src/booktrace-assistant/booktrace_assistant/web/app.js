@@ -1,5 +1,4 @@
-const TOKEN = window.BOOKTRACE_TOKEN;
-const headers = { "Content-Type": "application/json", "X-BookTrace-Token": TOKEN };
+const headers = { "Content-Type": "application/json" };
 
 const chat = document.querySelector("#chat");
 const welcome = document.querySelector("#welcome");
@@ -42,7 +41,6 @@ let settings = null;
 const itemsUI = {};
 let pendingSave = null;
 let batchRows = [];
-let stopped = false;
 const progresses = {};
 
 const STEP_ICONS = { note: "💬", think: "🧠", search: "🔍", fetch: "🌐", booktrace: "📚", image: "🖼️", error: "⚠️" };
@@ -578,15 +576,14 @@ function processEvent(event) {
 }
 
 async function pollEvents() {
-  if (stopped) return;
   try {
-    const data = await api(`/api/events?after=${lastEventId}`, { method: "GET", headers: { "X-BookTrace-Token": TOKEN } });
+    const data = await api(`/api/events?after=${lastEventId}`, { method: "GET" });
     (data.events || []).forEach(processEvent);
     if (data.state) setBusy(data.state.busy, data.state.busyMode, data.state.status);
   } catch (error) {
-    if (!stopped) showToast(error.message);
+    showToast(error.message);
   } finally {
-    if (!stopped) setTimeout(pollEvents, busy ? 650 : 1100);
+    setTimeout(pollEvents, busy ? 650 : 1100);
   }
 }
 
@@ -910,19 +907,9 @@ document.querySelector("#confirm-save").addEventListener("click", async (event) 
   }
 });
 
-document.querySelector("#shutdown-app").addEventListener("click", async () => {
-  if (busy) { showToast("請先等目前工作完成或按停止"); return; }
-  if (!confirm("要結束 BookTrace 小幫手嗎？")) return;
-  try {
-    await api("/api/shutdown", { method: "POST", body: "{}" });
-    stopped = true;
-    document.body.innerHTML = '<main class="welcome"><div class="welcome-icon">B</div><h1>BookTrace 小幫手已結束</h1><p>可以關閉這個分頁。</p></main>';
-  } catch (error) { showToast(error.message); }
-});
-
 async function initialize() {
   try {
-    const state = await api("/api/state", { method: "GET", headers: { "X-BookTrace-Token": TOKEN } });
+    const state = await api("/api/state", { method: "GET" });
     settings = state.settings;
     renderSettings();
     setBusy(state.busy, state.busyMode, state.status);
